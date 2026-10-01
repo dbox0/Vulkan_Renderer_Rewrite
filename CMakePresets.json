@@ -1,0 +1,35 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "debug",
+            "inherits": "base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+        },
+        {
+            "name": "debug-asan",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+            }
+        },
+        {
+            "name": "release",
+            "inherits": "base",
+            "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug", "configurePreset": "debug" },
+        { "name": "debug-asan", "configurePreset": "debug-asan" },
+        { "name": "release", "configurePreset": "release" }
+    ]
+}
