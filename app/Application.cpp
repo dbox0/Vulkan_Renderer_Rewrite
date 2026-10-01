@@ -43,13 +43,6 @@ bool Application::loadData(const std::filesystem::path &modelPath)
         return false;
     }
 
-    // Scale the root down; the test model is authored huge.
-    // (Still following the tutorial here -- this belongs in scene setup later.)
-    if (const uint32_t rootId = m_scene.rootNodeId()) {
-        Node &root = m_scene.getNode(rootId);
-        root.setScale(glm::vec3(0.01f));
-        root.setTranslation(glm::vec3(0.0f, -5.0f, 0.0f));
-    }
 
     // Each of these commits a snapshot of a store to the GPU, so they run after ALL loading.
     if (!m_geometry.uploadToGpu()) {

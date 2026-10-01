@@ -25,7 +25,7 @@ public:
     float nearPlane  = 0.01f;
     float farPlane   = 1000.0f;
 
-    float speed           = 6.0f;
+    float speed           = 3.0f;
     float lookSensitivity = 0.005f;
     float panSensitivity  = 0.005f;
 
