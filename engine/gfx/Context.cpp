@@ -83,6 +83,9 @@ void Context::shutdown()
     if (m_allocator) {
         vmaDestroyAllocator(m_allocator);
     }
+    if (!m_queue.handle() ) {
+        m_queue.destroy();
+    }
     if (m_device) {
         vkDestroyDevice(m_device, nullptr);
     }
@@ -283,6 +286,7 @@ void Context::createDevice()
     VK_CHECK(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
     volkLoadDevice(m_device);
     m_queue.init(m_device, m_queueFamily);
+    setName(VK_OBJECT_TYPE_SEMAPHORE, m_queue.timeline(), "queue timeline");
 }
 
 void Context::createAllocator()
@@ -364,7 +368,7 @@ void Context::flush(const Buffer &buffer) const
     VK_CHECK(vmaFlushAllocation(m_allocator, buffer.allocation, 0, VK_WHOLE_SIZE));
 }
 
-void Context::upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset) const
+void Context::upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset)
 {
     Buffer staging = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, "staging");
     write(staging, data, size);
@@ -482,7 +486,7 @@ void Context::createImage2D(VkCommandBuffer cmd, const unsigned char *pixels, ui
     });
 }
 
-void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record) const
+void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record)
 {
     const VkCommandBufferAllocateInfo allocInfo
     {
@@ -518,7 +522,6 @@ void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record
         .pCommandBufferInfos = &cmdInfo
     };
     m_queue.submit(submitInfo);
-    m_queue.waitIdle();
 
     vkFreeCommandBuffers(m_device, m_immediatePool, 1, &cmd);
 }

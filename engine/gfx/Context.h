@@ -28,6 +28,7 @@ public:
     VkDevice         device() const         { return m_device; }
     VkSurfaceKHR     surface() const        { return m_surface; }
     const Queue     &queue() const          { return m_queue; }
+    Queue           &queue()                { return m_queue; }
     uint32_t         queueFamily() const    { return m_queueFamily; }
     VmaAllocator     allocator() const      { return m_allocator; }
 
@@ -41,7 +42,7 @@ public:
     void flush(const Buffer &buffer) const;
 
     // Copies into any buffer through a staging buffer. Blocks until the GPU is done.
-    void upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset = 0) const;
+    void upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset = 0);
 
     Image createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name) const;
     void  destroyImage(Image &image) const;
@@ -51,7 +52,7 @@ public:
                        Image &outImage, Buffer &outStaging, const char *name) const;
 
     // Records, submits and waits. Load-time only.
-    void immediateSubmit(const std::function<void(VkCommandBuffer)> &record) const;
+    void immediateSubmit(const std::function<void(VkCommandBuffer)> &record);
 
     template <typename Handle>
     void setName(VkObjectType type, Handle handle, const char *name) const

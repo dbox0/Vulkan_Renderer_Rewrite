@@ -6,7 +6,8 @@ add_library(gfx STATIC
     gfx/Context.cpp
     gfx/Swapchain.cpp
     gfx/Pipeline.cpp
-    gfx/Implementations.cpp)
+    gfx/Implementations.cpp
+        gfx/Queue.cpp)
 target_link_libraries(gfx
     PUBLIC core Vulkan::Headers Vulkan::volk
     PRIVATE SDL3::SDL3 PkgConfig::SHADERC)

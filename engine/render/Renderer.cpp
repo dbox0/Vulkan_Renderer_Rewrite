@@ -52,27 +52,11 @@ void Renderer::shutdown()
         vkDestroyCommandPool(device, frame.commandPool, nullptr);
         frame = Frame{};
     }
-    vkDestroySemaphore(device, m_frameTimeline, nullptr);
 }
 
 void Renderer::createFrames()
 {
     const VkDevice device = m_ctx.device();
-
-    const VkSemaphoreTypeCreateInfo timelineType
-    {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO,
-        .semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE,
-        .initialValue = 0
-    };
-    const VkSemaphoreCreateInfo timelineInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
-        .pNext = &timelineType
-    };
-    VK_CHECK(vkCreateSemaphore(device, &timelineInfo, nullptr, &m_frameTimeline));
-    m_ctx.setName(VK_OBJECT_TYPE_SEMAPHORE, m_frameTimeline, "frame timeline");
-
     const VkDeviceSize indirectBytes   = VkDeviceSize{m_maxDraws} * sizeof(VkDrawIndexedIndirectCommand);
     const VkDeviceSize renderItemBytes = VkDeviceSize{m_maxDraws} * sizeof(RenderItem);
 
@@ -198,19 +182,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
     }
 
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
-
-    // Wait until the GPU has finished the last frame that used this slot.
-    if (m_frameNumber >= FramesInFlight) {
-        const uint64_t waitValue = m_frameNumber + 1 - FramesInFlight;
-        const VkSemaphoreWaitInfo waitInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO,
-            .semaphoreCount = 1,
-            .pSemaphores = &m_frameTimeline,
-            .pValues = &waitValue
-        };
-        VK_CHECK(vkWaitSemaphores(m_ctx.device(), &waitInfo, UINT64_MAX));
-    }
+    m_ctx.queue().wait(frame.submitValue);
 
     // A failed acquire consumes nothing: the frame number only advances once a frame is submitted.
     uint32_t imageIndex = 0;
@@ -248,13 +220,6 @@ void Renderer::render(Scene &scene, const Camera &camera)
             .semaphore = m_swapchain.renderFinished(imageIndex),
             .stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
         },
-        VkSemaphoreSubmitInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = m_frameTimeline,
-            .value = signalValue,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT
-        }
     };
     const VkCommandBufferSubmitInfo cmdInfo
     {
@@ -271,10 +236,12 @@ void Renderer::render(Scene &scene, const Camera &camera)
         .signalSemaphoreInfoCount = static_cast<uint32_t>(signalInfos.size()),
         .pSignalSemaphoreInfos = signalInfos.data()
     };
-    m_ctx.queue().submit(submitInfo);
-    m_frameNumber = signalValue;
+    //m_ctx.queue().submit(submitInfo);
+    frame.submitValue = m_ctx.queue().submit(submitInfo);
+    ++m_frameNumber;
 
     m_swapchain.present(m_ctx.queue(), imageIndex);
+
 }
 
 void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount)

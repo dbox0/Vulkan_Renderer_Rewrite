@@ -54,6 +54,7 @@ private:
         VkSemaphore     imageAcquired = VK_NULL_HANDLE;
         gfx::Buffer     indirectDraws;
         gfx::Buffer     renderItems;
+        uint64_t submitValue = 0;
     };
 
     void createFrames();
@@ -70,7 +71,6 @@ private:
     GeometryStore  &m_geometry;
 
     std::array<Frame, FramesInFlight> m_frames{};
-    VkSemaphore m_frameTimeline = VK_NULL_HANDLE;
     uint64_t    m_frameNumber   = 0;   // frames submitted so far; frame n signals n + 1
 
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
