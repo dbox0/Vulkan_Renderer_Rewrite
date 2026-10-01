@@ -9,7 +9,11 @@ Needs SDL3, the Vulkan SDK (headers, loader, volk, validation layers), VMA, shad
 
     cmake --preset debug
     cmake --build --preset debug
-    ./build/debug/app/vulkanapp path/to/scene.gltf
+    ./build/debug/bin/vulkanapp path/to/scene.gltf      # renderer only
+    ./build/debug/bin/vulkaneditor [path/to/scene.gltf] # with the ImGui editor
+
+The editor opens models from File > Open (Ctrl+O) or by dropping a .gltf/.glb on the window.
+Configure with `-DBUILD_EDITOR=OFF` to build without it (and without fetching ImGui).
 
 Presets: `debug`, `debug-asan`, `release`. Debug builds enable validation and synchronization validation.
 Camera: W/S zoom, A/D orbit, Up/Down pitch. Esc quits.
@@ -18,11 +22,14 @@ Camera: W/S zoom, A/D orbit, Up/Down pitch. Esc quits.
 
     engine/core     logging and fatal errors (no Vulkan)
     engine/gfx      context, swapchain, buffers, images, pipelines, barriers
-    engine/scene    nodes, scene graph, camera, math (no Vulkan)
+    engine/scene    nodes, scene graph, camera (no Vulkan)
     engine/render   frame loop, geometry and resource stores
     engine/assets   glTF loader
-    app/            window, events, main loop
-    shaders/        GLSL, compiled at runtime from <exe dir>/shaders
+    app/            window, events, main loop, AppLayer hook (vulkanapp)
+    editor/         ImGui editor, attaches as an AppLayer (vulkaneditor)
+    shaders/        GLSL, compiled at runtime from <bin>/shaders
     third_party/    tiny_gltf_v3, stb_image
     assets/         models and textures (kept out of src)
 
+Dependencies point down: core <- gfx <- render <- assets <- app <- editor, and core <- scene <- render.
+The renderer only exposes an overlay callback; it never includes editor code.

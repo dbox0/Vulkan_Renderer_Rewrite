@@ -1,11 +1,8 @@
-add_executable(vulkanapp
-    main.cpp
-    Application.cpp)
-target_link_libraries(vulkanapp PRIVATE assets render SDL3::SDL3)
-enable_warnings(vulkanapp)
+add_library(app STATIC Application.cpp)
+target_include_directories(app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(app PUBLIC assets render SDL3::SDL3)
+enable_warnings(app)
 
-# Shaders are compiled at runtime from <exe dir>/shaders.
-add_custom_target(copy_shaders ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${PROJECT_SOURCE_DIR}/shaders $<TARGET_FILE_DIR:vulkanapp>/shaders)
-add_dependencies(vulkanapp copy_shaders)
+add_executable(vulkanapp main.cpp)
+target_link_libraries(vulkanapp PRIVATE app)
+enable_warnings(vulkanapp)

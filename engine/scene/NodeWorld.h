@@ -18,6 +18,7 @@ public:
         m_nodes.reserve(m_maxNodes);
     }
     [[nodiscard]] size_t maxNodes() const {return m_maxNodes;}
+    void clear() { m_nodes.clear(); }
 
     // A runtime check rather than an assert: growing past the reservation reallocates
     // and invalidates every Node& handed out so far.

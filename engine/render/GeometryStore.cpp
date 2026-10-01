@@ -6,6 +6,8 @@
 
 void GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 {
+    m_vertexBudgetBytes = vertexBudgetBytes;
+    m_indexBudgetBytes  = indexBudgetBytes;
     m_vertices.resize(vertexBudgetBytes / sizeof(Vertex));
     m_indices.resize(indexBudgetBytes / sizeof(uint32_t));
     m_vertOffset = 0;
@@ -22,6 +24,12 @@ void GeometryStore::shutdown()
     m_vertOffset = 0;
     m_idxOffset  = 0;
     m_uploaded = false;
+}
+
+void GeometryStore::reset()
+{
+    shutdown();
+    reserve(m_vertexBudgetBytes, m_indexBudgetBytes);
 }
 
 size_t GeometryStore::appendVertices(size_t count)

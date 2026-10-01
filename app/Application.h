@@ -4,6 +4,7 @@
 
 #include <SDL3/SDL_events.h>
 
+#include "AppLayer.h"
 #include "gfx/Context.h"
 #include "gfx/Swapchain.h"
 #include "render/GeometryStore.h"
@@ -21,6 +22,19 @@ public:
     void run();
     void shutdown();
 
+
+    void setLayer(AppLayer *layer) { m_layer = layer; }
+
+    SDL_Window       *window()          { return m_window; }
+    gfx::Context     &context()         { return m_ctx; }
+    gfx::Swapchain   &swapchain()       { return m_swapchain; }
+    render::Renderer &renderer()        { return m_renderer; }
+    Scene            &scene()           { return m_scene; }
+    Camera           &camera()          { return m_camera; }
+    GeometryStore    &geometry()        { return m_geometry; }
+    ResourceStore    &resources()       { return m_resources; }
+    void              quit()            { m_running = false; }
+
 private:
     void handleEvent(const SDL_Event &event);
 
@@ -32,6 +46,7 @@ private:
     SDL_Window *m_window    = nullptr;
     bool        m_running   = false;
     bool        m_minimized = false;
+    AppLayer   *m_layer     = nullptr;
 
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.
     gfx::Context     m_ctx;

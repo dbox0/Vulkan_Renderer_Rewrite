@@ -371,6 +371,38 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount
 
     vkCmdEndRendering(cmd);
 
+    if (m_overlay) {
+        gfx::transition(cmd, {
+            .image = swapchainImage,
+            .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            .dstAccess = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
+        });
+
+        const VkRenderingAttachmentInfo overlayAttachment
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+            .imageView = m_swapchain.view(imageIndex),
+            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+            .storeOp = VK_ATTACHMENT_STORE_OP_STORE
+        };
+        const VkRenderingInfo overlayInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea{ .extent = extent },
+            .layerCount = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments = &overlayAttachment
+        };
+        vkCmdBeginRendering(cmd, &overlayInfo);
+        m_overlay(cmd);
+        vkCmdEndRendering(cmd);
+    }
+
     gfx::transition(cmd, {
         .image = swapchainImage,
         .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

@@ -20,6 +20,7 @@ public:
 
     void reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes);
     void shutdown();
+    void reset();   // drops all meshes and GPU buffers; the GPU must be idle
 
     size_t appendVertices(size_t count);
     size_t appendIndices(size_t count);
@@ -44,6 +45,8 @@ private:
     std::vector<uint32_t> m_indices;
     size_t m_vertOffset = 0;
     size_t m_idxOffset  = 0;
+    size_t m_vertexBudgetBytes = 0;
+    size_t m_indexBudgetBytes  = 0;
     std::vector<Mesh> m_meshes;
 
     gfx::Buffer m_vertexBuffer;

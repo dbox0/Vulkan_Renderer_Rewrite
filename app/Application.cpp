@@ -32,6 +32,11 @@ void Application::init()
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
+    VK_CHECK(vkDeviceWaitIdle(m_ctx.device()));
+    m_scene.clear();
+    m_geometry.reset();
+    m_resources.clearModelData();
+
     GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
     if (!loader.load(modelPath)) {
         core::warn("Failed to load model: " + modelPath.string());
@@ -80,13 +85,22 @@ void Application::run()
         const float deltaTime = static_cast<float>(now - prevTime) * 1e-9f;
         prevTime = now;
 
-        m_camera.handleInput(keys, deltaTime);
+        if (m_layer) {
+            m_layer->onUpdate(deltaTime);
+        }
+        if (!m_layer || !m_layer->wantsKeyboard()) {
+            m_camera.handleInput(keys, deltaTime);
+        }
         m_renderer.render(m_scene, m_camera);
     }
 }
 
 void Application::handleEvent(const SDL_Event &event)
 {
+    if (m_layer && m_layer->onEvent(event)) {
+        return;
+    }
+
     switch (event.type) {
     case SDL_EVENT_QUIT:
         m_running = false;

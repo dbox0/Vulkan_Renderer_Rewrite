@@ -28,6 +28,7 @@ public:
 
     void initialize();          // descriptor pool/layout/set + purple fallback
     void shutdown();
+    void clearModelData();      // keeps the fallbacks and default material; the GPU must be idle
 
     // Records the upload into commandBuffer; the returned staging buffer must
     // be destroyed by the caller after submit. Pixels are RGBA8.

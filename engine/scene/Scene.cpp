@@ -19,6 +19,13 @@ void Scene::addRootNode(uint32_t nodeId)
     m_lastRootNodeId = nodeId;
 }
 
+void Scene::clear()
+{
+    m_nodeWorld.clear();
+    m_rootNodeId = 0;
+    m_lastRootNodeId = 0;
+}
+
 void Scene::collectDrawItems(std::vector<DrawItem> &out)
 {
     out.clear();

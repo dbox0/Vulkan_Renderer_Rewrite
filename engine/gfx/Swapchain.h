@@ -35,6 +35,7 @@ public:
     void flagForRecreate()     { m_needsRecreate = true; }
 
     VkExtent2D  extent() const                        { return m_extent; }
+    uint32_t    imageCount() const                    { return static_cast<uint32_t>(m_images.size()); }
     VkImage     image(uint32_t index) const           { return m_images[index]; }
     VkImageView view(uint32_t index) const            { return m_views[index]; }
     VkSemaphore renderFinished(uint32_t index) const  { return m_renderFinished[index]; }

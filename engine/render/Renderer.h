@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 #include <glm/mat4x4.hpp>
@@ -32,6 +33,10 @@ public:
     void shutdown();
 
     void render(Scene &scene, const Camera &camera);
+
+    // Recorded after the scene, into the swapchain image with no depth attachment. Used by the editor.
+    using Overlay = std::function<void(VkCommandBuffer)>;
+    void setOverlay(Overlay overlay) { m_overlay = std::move(overlay); }
 
 private:
     // Per-draw data the vertex shader pulls through renderItemsAddress.
@@ -74,6 +79,7 @@ private:
 
     uint32_t              m_maxDraws = 0;
     std::vector<DrawItem> m_drawItems;   // reused across frames
+    Overlay               m_overlay;
 };
 
 } // namespace render

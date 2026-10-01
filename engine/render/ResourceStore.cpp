@@ -51,7 +51,29 @@ void ResourceStore::shutdown()
 }
 
 
-// adders -- 1-based IDs, 0 means failure/none
+void ResourceStore::clearModelData()
+{
+    // The fallback image, sampler and texture are always first, the default material too.
+    for (size_t i = m_fallbackImageId; i < m_images.size(); ++i) {
+        m_ctx.destroyImage(m_images[i]);
+    }
+    m_images.resize(m_fallbackImageId);
+
+    for (size_t i = m_fallbackSamplerId; i < m_samplers.size(); ++i) {
+        vkDestroySampler(m_ctx.device(), m_samplers[i], nullptr);
+    }
+    m_samplers.resize(m_fallbackSamplerId);
+
+    for (gfx::Buffer &buff : m_buffers) {
+        m_ctx.destroyBuffer(buff);
+    }
+    m_buffers.clear();
+    m_materialBufferId = 0;
+
+    m_textures.resize(m_fallbackTextureId);
+    m_materials.resize(1);
+}
+
 
 uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
                                  uint32_t width, uint32_t height, gfx::Buffer &outStagingBuffer)

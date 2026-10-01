@@ -23,6 +23,7 @@ public:
     size_t maxNodes() const        { return m_nodeWorld.maxNodes(); }
 
     void addRootNode(uint32_t nodeId);
+    void clear();
 
     void collectDrawItems(std::vector<DrawItem> &out);
 
