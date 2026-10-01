@@ -5,6 +5,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "Application.h"
@@ -69,7 +70,7 @@ void Editor::attach(Application &app)
     initInfo.PhysicalDevice = ctx.physicalDevice();
     initInfo.Device = ctx.device();
     initInfo.QueueFamily = ctx.queueFamily();
-    initInfo.Queue = ctx.queue();
+    initInfo.Queue = ctx.queue().handle();
     initInfo.DescriptorPool = m_pool;
     initInfo.MinImageCount = 2;
     initInfo.ImageCount = std::max(2u, app.swapchain().imageCount());
@@ -251,8 +252,22 @@ void Editor::drawScenePanel()
     ImGui::TextDisabled("Hold RMB: look, WASD/QE fly. MMB drag: pan");
 
     ImGui::SeparatorText("Frame");
-    const float fps = ImGui::GetIO().Framerate;
-    ImGui::Text("%.2f ms (%.0f FPS)", 1000.0f / fps, fps);
+    const core::FrameStats &stats = m_app->frameStats();
+    const float average = stats.average();
+    ImGui::Text("%.2f ms avg, %.2f ms max (%.0f FPS)", average, stats.maximum(), average > 0.0f ? 1000.0f / average : 0.0f);
+    ImGui::PlotLines("##frametimes", stats.data(), static_cast<int>(stats.count()), static_cast<int>(stats.oldest()),
+                     nullptr, 0.0f, std::max(stats.maximum(), 1.0f) * 1.2f, ImVec2(-1.0f, 60.0f));
+
+    gfx::Swapchain &swapchain = m_app->swapchain();
+    if (ImGui::BeginCombo("Present mode", gfx::presentModeName(swapchain.presentMode()))) {
+        for (const VkPresentModeKHR mode : swapchain.supportedPresentModes()) {
+            if (ImGui::Selectable(gfx::presentModeName(mode), mode == swapchain.presentMode())) {
+                swapchain.setPresentMode(mode);
+            }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextDisabled("FIFO is capped at the refresh rate");
 
     ImGui::End();
 }

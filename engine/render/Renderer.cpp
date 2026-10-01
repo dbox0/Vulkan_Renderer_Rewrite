@@ -5,6 +5,7 @@
 #include "GeometryStore.h"
 #include "ResourceStore.h"
 #include "gfx/Barriers.h"
+#include "gfx/DebugLabel.h"
 #include "gfx/Pipeline.h"
 #include "scene/Camera.h"
 
@@ -270,7 +271,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
         .signalSemaphoreInfoCount = static_cast<uint32_t>(signalInfos.size()),
         .pSignalSemaphoreInfos = signalInfos.data()
     };
-    VK_CHECK(vkQueueSubmit2(m_ctx.queue(), 1, &submitInfo, VK_NULL_HANDLE));
+    m_ctx.queue().submit(submitInfo);
     m_frameNumber = signalValue;
 
     m_swapchain.present(m_ctx.queue(), imageIndex);
@@ -336,42 +337,46 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount
         .pColorAttachments = &colorAttachment,
         .pDepthAttachment = &depthAttachment
     };
-    vkCmdBeginRendering(cmd, &renderingInfo);
+    {
+        const gfx::DebugLabel label(cmd, "Scene");
+        vkCmdBeginRendering(cmd, &renderingInfo);
 
-    if (drawCount > 0) {
-        // Negative height flips Y so +Y points up, matching glTF and glm.
-        const VkViewport viewport
-        {
-            .x = 0.0f,
-            .y = static_cast<float>(extent.height),
-            .width = static_cast<float>(extent.width),
-            .height = -static_cast<float>(extent.height),
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f
-        };
-        const VkRect2D scissor{ .extent = extent };
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
+        if (drawCount > 0) {
+            // Negative height flips Y so +Y points up, matching glTF and glm.
+            const VkViewport viewport
+            {
+                .x = 0.0f,
+                .y = static_cast<float>(extent.height),
+                .width = static_cast<float>(extent.width),
+                .height = -static_cast<float>(extent.height),
+                .minDepth = 0.0f,
+                .maxDepth = 1.0f
+            };
+            const VkRect2D scissor{ .extent = extent };
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        const VkDescriptorSet globalSet = m_resources.globalDescriptorSet();
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &globalSet, 0, nullptr);
+            const VkDescriptorSet globalSet = m_resources.globalDescriptorSet();
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &globalSet, 0, nullptr);
 
-        const PushConstants push
-        {
-            .vertexBufferAddress = m_geometry.vertexBufferAddress(),
-            .materialBufferAddress = m_resources.materialBufferAddress(),
-            .renderItemsAddress = frame.renderItems.address
-        };
-        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(push), &push);
+            const PushConstants push
+            {
+                .vertexBufferAddress = m_geometry.vertexBufferAddress(),
+                .materialBufferAddress = m_resources.materialBufferAddress(),
+                .renderItemsAddress = frame.renderItems.address
+            };
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(push), &push);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-        vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexedIndirect(cmd, frame.indirectDraws.buffer, 0, drawCount, sizeof(VkDrawIndexedIndirectCommand));
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+            vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexedIndirect(cmd, frame.indirectDraws.buffer, 0, drawCount, sizeof(VkDrawIndexedIndirectCommand));
+        }
+
+        vkCmdEndRendering(cmd);
     }
 
-    vkCmdEndRendering(cmd);
-
     if (m_overlay) {
+        const gfx::DebugLabel label(cmd, "Overlay");
         gfx::transition(cmd, {
             .image = swapchainImage,
             .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

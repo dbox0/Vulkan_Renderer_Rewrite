@@ -19,6 +19,7 @@ Configure with `-DBUILD_EDITOR=OFF` to build without it (and without fetching Im
 Extended functionality will gradually be added back in.
 
 Presets: `debug`, `debug-asan`, `release`. Debug builds enable validation and synchronization validation.
+Press V to cycle present modes; FIFO caps the frame rate at the display's refresh rate.
 
 ## Layout
 

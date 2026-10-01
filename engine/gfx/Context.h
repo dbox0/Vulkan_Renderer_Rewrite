@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <functional>
 
+#include "Queue.h"
 #include "Resources.h"
 #include "Vk.h"
 
@@ -26,7 +27,7 @@ public:
     VkPhysicalDevice physicalDevice() const { return m_physicalDevice; }
     VkDevice         device() const         { return m_device; }
     VkSurfaceKHR     surface() const        { return m_surface; }
-    VkQueue          queue() const          { return m_queue; }
+    const Queue     &queue() const          { return m_queue; }
     uint32_t         queueFamily() const    { return m_queueFamily; }
     VmaAllocator     allocator() const      { return m_allocator; }
 
@@ -71,7 +72,7 @@ private:
     VkSurfaceKHR             m_surface        = VK_NULL_HANDLE;
     VkPhysicalDevice         m_physicalDevice = VK_NULL_HANDLE;
     VkDevice                 m_device         = VK_NULL_HANDLE;
-    VkQueue                  m_queue          = VK_NULL_HANDLE;
+    Queue                    m_queue;
     uint32_t                 m_queueFamily    = UINT32_MAX;
     VmaAllocator             m_allocator      = nullptr;
     VkCommandPool            m_immediatePool  = VK_NULL_HANDLE;

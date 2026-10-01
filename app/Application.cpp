@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <format>
 
 #include "assets/GltfLoader.h"
@@ -77,6 +78,7 @@ void Application::run()
         const uint64_t now = SDL_GetTicksNS();
         const float deltaTime = static_cast<float>(now - prevTime) * 1e-9f;
         prevTime = now;
+        m_frameStats.add(deltaTime * 1000.0f);
 
         if (m_layer) {
             m_layer->onUpdate(deltaTime);
@@ -102,6 +104,8 @@ void Application::handleEvent(const SDL_Event &event)
     case SDL_EVENT_KEY_DOWN:
         if (event.key.key == SDLK_ESCAPE) {
             m_running = false;
+        } else if (event.key.key == SDLK_V && !event.key.repeat) {
+            cyclePresentMode();
         }
         break;
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -117,6 +121,19 @@ void Application::handleEvent(const SDL_Event &event)
     default:
         break;
     }
+}
+
+void Application::cyclePresentMode()
+{
+    const std::vector<VkPresentModeKHR> &modes = m_swapchain.supportedPresentModes();
+    if (modes.empty()) {
+        return;
+    }
+    auto it = std::ranges::find(modes, m_swapchain.presentMode());
+    it = (it == modes.end() || std::next(it) == modes.end()) ? modes.begin() : std::next(it);
+
+    m_swapchain.setPresentMode(*it);
+    core::log(std::format("Present mode: {}", gfx::presentModeName(*it)));
 }
 
 void Application::shutdown()

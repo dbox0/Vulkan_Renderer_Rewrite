@@ -5,6 +5,7 @@
 #include <SDL3/SDL_events.h>
 
 #include "AppLayer.h"
+#include "core/FrameStats.h"
 #include "gfx/Context.h"
 #include "gfx/Swapchain.h"
 #include "render/GeometryStore.h"
@@ -33,10 +34,12 @@ public:
     Camera           &camera()          { return m_camera; }
     GeometryStore    &geometry()        { return m_geometry; }
     ResourceStore    &resources()       { return m_resources; }
+    const core::FrameStats &frameStats() const { return m_frameStats; }
     void              quit()            { m_running = false; }
 
 private:
     void handleEvent(const SDL_Event &event);
+    void cyclePresentMode();
 
     static constexpr size_t   MaxNodes          = 4096;
     static constexpr size_t   VertexBudgetBytes = 64ull * 1024 * 1024;
@@ -47,6 +50,8 @@ private:
     bool        m_running   = false;
     bool        m_minimized = false;
     AppLayer   *m_layer     = nullptr;
+
+    core::FrameStats m_frameStats;
 
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.
     gfx::Context     m_ctx;

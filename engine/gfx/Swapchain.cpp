@@ -9,6 +9,17 @@
 namespace gfx
 {
 
+const char *presentModeName(VkPresentModeKHR mode)
+{
+    switch (mode) {
+    case VK_PRESENT_MODE_FIFO_KHR:         return "FIFO (vsync)";
+    case VK_PRESENT_MODE_FIFO_RELAXED_KHR: return "FIFO relaxed";
+    case VK_PRESENT_MODE_MAILBOX_KHR:      return "Mailbox";
+    case VK_PRESENT_MODE_IMMEDIATE_KHR:    return "Immediate (tearing)";
+    default:                               return "Other";
+    }
+}
+
 void Swapchain::create(SDL_Window *window)
 {
     m_window = window;
@@ -69,6 +80,15 @@ bool Swapchain::build(VkSwapchainKHR oldSwapchain)
         core::fatal("The surface does not support B8G8R8A8_SRGB");
     }
 
+    uint32_t modeCount = 0;
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(m_ctx.physicalDevice(), m_ctx.surface(), &modeCount, nullptr));
+    m_supportedPresentModes.resize(modeCount);
+    VK_CHECK(vkGetPhysicalDeviceSurfacePresentModesKHR(m_ctx.physicalDevice(), m_ctx.surface(), &modeCount, m_supportedPresentModes.data()));
+    if (std::ranges::find(m_supportedPresentModes, m_presentMode) == m_supportedPresentModes.end()) {
+        core::warn(std::format("{} is not supported here; using FIFO", presentModeName(m_presentMode)));
+        m_presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    }
+
     uint32_t imageCount = caps.minImageCount + 1;
     if (caps.maxImageCount > 0) {
         imageCount = std::min(imageCount, caps.maxImageCount);
@@ -86,7 +106,7 @@ bool Swapchain::build(VkSwapchainKHR oldSwapchain)
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .preTransform = caps.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+        .presentMode = m_presentMode,
         .clipped = VK_TRUE,
         .oldSwapchain = oldSwapchain
     };
@@ -148,7 +168,15 @@ bool Swapchain::acquire(VkSemaphore imageAcquired, uint32_t &imageIndex)
     return true;
 }
 
-void Swapchain::present(VkQueue queue, uint32_t imageIndex)
+void Swapchain::setPresentMode(VkPresentModeKHR mode)
+{
+    if (mode != m_presentMode) {
+        m_presentMode = mode;
+        m_needsRecreate = true;
+    }
+}
+
+void Swapchain::present(const Queue &queue, uint32_t imageIndex)
 {
     const VkSemaphore waitSemaphore = m_renderFinished[imageIndex];
     const VkPresentInfoKHR presentInfo
@@ -160,7 +188,7 @@ void Swapchain::present(VkQueue queue, uint32_t imageIndex)
         .pSwapchains = &m_swapchain,
         .pImageIndices = &imageIndex
     };
-    const VkResult result = vkQueuePresentKHR(queue, &presentInfo);
+    const VkResult result = queue.present(presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         m_needsRecreate = true;
         return;

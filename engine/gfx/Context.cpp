@@ -3,6 +3,7 @@
 #include <SDL3/SDL_vulkan.h>
 
 #include "Barriers.h"
+#include "DebugLabel.h"
 
 #include <iterator>
 #include <vector>
@@ -281,7 +282,7 @@ void Context::createDevice()
 
     VK_CHECK(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));
     volkLoadDevice(m_device);
-    vkGetDeviceQueue(m_device, m_queueFamily, 0, &m_queue);
+    m_queue.init(m_device, m_queueFamily);
 }
 
 void Context::createAllocator()
@@ -499,7 +500,10 @@ void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
     };
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-    record(cmd);
+    {
+        const DebugLabel label(cmd, "Immediate submit");
+        record(cmd);
+    }
     VK_CHECK(vkEndCommandBuffer(cmd));
 
     const VkCommandBufferSubmitInfo cmdInfo
@@ -513,8 +517,8 @@ void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record
         .commandBufferInfoCount = 1,
         .pCommandBufferInfos = &cmdInfo
     };
-    VK_CHECK(vkQueueSubmit2(m_queue, 1, &submitInfo, VK_NULL_HANDLE));
-    VK_CHECK(vkQueueWaitIdle(m_queue));
+    m_queue.submit(submitInfo);
+    m_queue.waitIdle();
 
     vkFreeCommandBuffers(m_device, m_immediatePool, 1, &cmd);
 }

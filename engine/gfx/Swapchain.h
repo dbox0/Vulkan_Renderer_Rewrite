@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "Queue.h"
 #include "Vk.h"
 
 struct SDL_Window;
@@ -10,6 +11,8 @@ namespace gfx
 {
 
 class Context;
+
+const char *presentModeName(VkPresentModeKHR mode);
 
 // Swapchain images, their views, and one render-finished semaphore per image.
 class Swapchain
@@ -29,7 +32,12 @@ public:
 
     // False means "skip this frame": the swapchain is out of date and nothing was acquired.
     bool acquire(VkSemaphore imageAcquired, uint32_t &imageIndex);
-    void present(VkQueue queue, uint32_t imageIndex);
+    void present(const Queue &queue, uint32_t imageIndex);
+
+    // Takes effect on the next frame (recreates the swapchain). Unsupported modes fall back to FIFO.
+    void setPresentMode(VkPresentModeKHR mode);
+    VkPresentModeKHR presentMode() const { return m_presentMode; }
+    const std::vector<VkPresentModeKHR> &supportedPresentModes() const { return m_supportedPresentModes; }
 
     bool needsRecreate() const { return m_needsRecreate; }
     void flagForRecreate()     { m_needsRecreate = true; }
@@ -53,6 +61,9 @@ private:
     std::vector<VkImageView> m_views;
     std::vector<VkSemaphore> m_renderFinished;
     bool                     m_needsRecreate = false;
+
+    VkPresentModeKHR              m_presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    std::vector<VkPresentModeKHR> m_supportedPresentModes;
 };
 
 }
