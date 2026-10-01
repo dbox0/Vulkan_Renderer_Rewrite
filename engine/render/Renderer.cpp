@@ -82,9 +82,9 @@ void Renderer::createFrames()
         VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.imageAcquired));
         m_ctx.setName(VK_OBJECT_TYPE_SEMAPHORE, frame.imageAcquired, "image acquired");
 
-        frame.indirectDraws = m_ctx.createBuffer(indirectBytes, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, true, "indirect draws");
+        frame.indirectDraws = m_ctx.createBuffer(indirectBytes, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, gfx::MemoryIntent::Upload, "indirect draws");
         frame.renderItems = m_ctx.createBuffer(renderItemBytes,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, true, "render items");
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, gfx::MemoryIntent::Upload, "render items");
     }
 }
 
@@ -185,9 +185,9 @@ void Renderer::render(Scene &scene, const Camera &camera)
     m_ctx.queue().wait(frame.submitValue);
     m_ctx.collect();
 
-    m_ctx.retire(m_ctx.createBuffer(1 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false, "retire test"));
-
-    /*if (m_frameNumber % 60 == 0) {
+    /*
+    m_ctx.retire(m_ctx.createBuffer(1 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, gfx::Context::MemoryIntent::Upload, "retire test"));
+    if (m_frameNumber % 60 == 0) {
         VmaTotalStatistics stats{};
         vmaCalculateStatistics(m_ctx.allocator(),&stats);
         core::log(std::format("allocated {} KB", stats.total.statistics.allocationBytes / 1024));

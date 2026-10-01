@@ -21,5 +21,5 @@ struct Image
     VkFormat      format     = VK_FORMAT_UNDEFINED;
     VkExtent2D    extent{};
 };
-
+    enum class MemoryIntent { GpuOnly, Upload, Readback };
 }

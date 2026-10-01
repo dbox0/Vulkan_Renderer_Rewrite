@@ -294,8 +294,8 @@ void ResourceStore::uploadMaterialBuffer()
     const size_t matDataBytes = m_materials.size() * sizeof(Material);
 
     gfx::Buffer matBuffer = m_ctx.createBuffer(matDataBytes,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, true, "materials");
-    m_ctx.write(matBuffer, m_materials.data(), matDataBytes);
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "materials");
+    m_ctx.upload(matBuffer, m_materials.data(), matDataBytes);
     m_materialBufferId = addBuffer(matBuffer);
 }
 

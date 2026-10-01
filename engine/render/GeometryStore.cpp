@@ -88,9 +88,9 @@ bool GeometryStore::uploadToGpu()
 
     // The vertex shader pulls vertices by address; the index buffer is bound normally.
     m_vertexBuffer = m_ctx.createBuffer(vertexBytes,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, false, "vertices");
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "vertices");
     m_indexBuffer = m_ctx.createBuffer(indexBytes,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, false, "indices");
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "indices");
 
     m_ctx.upload(m_vertexBuffer, m_vertices.data(), vertexBytes);
     m_ctx.upload(m_indexBuffer, m_indices.data(), indexBytes);

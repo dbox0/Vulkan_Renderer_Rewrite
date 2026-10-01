@@ -308,20 +308,25 @@ namespace gfx {
         vkSetDebugUtilsObjectNameEXT(m_device, &info);
     }
 
-    Buffer Context::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, bool hostVisible,
-                                 const char *name) const {
+    Buffer Context::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, MemoryIntent intent, const char *name) const
+    {
+        VmaAllocationCreateInfo allocInfo{ .usage = VMA_MEMORY_USAGE_AUTO };
+        switch (intent) {
+            case MemoryIntent::GpuOnly:
+                allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+                break;
+            case MemoryIntent::Upload:
+                allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                break;
+            case MemoryIntent::Readback:
+                allocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+                break;
+        }
         const VkBufferCreateInfo bufferInfo
         {
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = size,
             .usage = usage
-        };
-        const VmaAllocationCreateInfo allocInfo
-        {
-            .flags = hostVisible
-                         ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-                         : VmaAllocationCreateFlags{0},
-            .usage = VMA_MEMORY_USAGE_AUTO
         };
 
         Buffer buffer{.size = size};
@@ -357,8 +362,12 @@ namespace gfx {
         VK_CHECK(vmaFlushAllocation(m_allocator, buffer.allocation, 0, VK_WHOLE_SIZE));
     }
 
+    void Context::invalidate(const Buffer &buffer) const {
+        VK_CHECK(vmaInvalidateAllocation(m_allocator, buffer.allocation, 0, VK_WHOLE_SIZE));
+    }
+
     void Context::upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset) {
-        Buffer staging = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, "staging");
+        Buffer staging = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "staging");
         write(staging, data, size);
 
         immediateSubmit([&](VkCommandBuffer cmd) {
@@ -443,7 +452,7 @@ namespace gfx {
                                VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, name);
 
         const VkDeviceSize byteSize = VkDeviceSize{width} * height * 4;
-        outStaging = createBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true, "texture staging");
+        outStaging = createBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "texture staging");
         write(outStaging, pixels, byteSize);
 
         transition(cmd, {

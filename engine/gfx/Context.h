@@ -33,7 +33,8 @@ public:
     uint32_t         queueFamily() const    { return m_queueFamily; }
     VmaAllocator     allocator() const      { return m_allocator; }
 
-    Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, bool hostVisible, const char *name) const;
+    Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, MemoryIntent intent, const char *name) const;
+    void   invalidate(const Buffer &buffer) const;
     void   destroyBuffer(Buffer &buffer) const;
 
     // Copies into a host-visible buffer (flushes if the memory needs it).
