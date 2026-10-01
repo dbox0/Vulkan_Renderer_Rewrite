@@ -308,6 +308,13 @@ namespace gfx {
         vkSetDebugUtilsObjectNameEXT(m_device, &info);
     }
 
+    //  USAGE cheat sheet:
+    //  Copied into with upload	TRANSFER_DST
+    //  Copied from (staging)	TRANSFER_SRC
+    //  Read in a shader by address	SHADER_DEVICE_ADDRESS
+    //  Bound with vkCmdBindIndexBuffer	INDEX_BUFFER
+    //  Read by vkCmdDrawIndexedIndirect	INDIRECT_BUFFER
+
     Buffer Context::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, MemoryIntent intent, const char *name) const
     {
         VmaAllocationCreateInfo allocInfo{ .usage = VMA_MEMORY_USAGE_AUTO };
