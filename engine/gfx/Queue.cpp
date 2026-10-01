@@ -1,10 +1,12 @@
 #include "Queue.h"
+#include <algorithm>
 using namespace gfx;
 
 void Queue::init(VkDevice device, uint32_t family)
 {
-        m_family = family;
-        vkGetDeviceQueue(device, family, 0, &m_queue);
+    m_device = device;
+    m_family = family;
+    vkGetDeviceQueue(device, family, 0, &m_queue);
 
     const VkSemaphoreTypeCreateInfo timelineType
     {
@@ -48,8 +50,9 @@ uint64_t Queue::submit(const VkSubmitInfo2 &info) {
 }
 
 uint64_t Queue::completed() {
-    VkResult result = vkGetSemaphoreCounterValue(m_device, m_timeline, &m_lastSubmitted);
-    return static_cast<uint64_t>(result);
+    uint64_t value = 0;
+    VK_CHECK(vkGetSemaphoreCounterValue(m_device, m_timeline, &value));
+    return value;
 }
 
 VkResult Queue::present(const VkPresentInfoKHR &info) const

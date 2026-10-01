@@ -83,7 +83,7 @@ void Context::shutdown()
     if (m_allocator) {
         vmaDestroyAllocator(m_allocator);
     }
-    if (!m_queue.handle() ) {
+    if (m_queue.handle() ) {
         m_queue.destroy();
     }
     if (m_device) {
@@ -521,9 +521,9 @@ void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record
         .commandBufferInfoCount = 1,
         .pCommandBufferInfos = &cmdInfo
     };
-    m_queue.submit(submitInfo);
+    m_queue.wait(m_queue.submit(submitInfo));
 
     vkFreeCommandBuffers(m_device, m_immediatePool, 1, &cmd);
 }
 
-} // namespace gfx
+}
