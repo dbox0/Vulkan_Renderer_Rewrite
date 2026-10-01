@@ -16,7 +16,7 @@ enable_warnings(gfx)
 add_library(scene STATIC
     scene/Scene.cpp
     scene/Camera.cpp)
-target_link_libraries(scene PUBLIC core glm::glm PRIVATE SDL3::SDL3)
+target_link_libraries(scene PUBLIC core glm::glm SDL3::SDL3)
 # Zero-to-one depth so glm's projections match Vulkan's clip space.
 target_compile_definitions(scene PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_ENABLE_EXPERIMENTAL)
 enable_warnings(scene)

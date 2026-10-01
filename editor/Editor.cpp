@@ -244,7 +244,11 @@ void Editor::drawScenePanel()
     ImGui::SliderFloat("FOV", &camera.fovDegrees, 20.0f, 120.0f, "%.0f deg");
     ImGui::DragFloat("Near", &camera.nearPlane, 0.001f, 0.0001f, camera.farPlane, "%.4f");
     ImGui::DragFloat("Far", &camera.farPlane, 1.0f, camera.nearPlane, 100000.0f, "%.0f");
-    ImGui::TextDisabled("W/S zoom, A/D orbit, Up/Down pitch");
+    ImGui::DragFloat("Speed", &camera.speed, 0.1f, 0.01f, 1000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    if (ImGui::Button("Look at origin")) {
+        camera.lookAt(glm::vec3(0.0f));
+    }
+    ImGui::TextDisabled("Hold RMB: look, WASD/QE fly. MMB drag: pan");
 
     ImGui::SeparatorText("Frame");
     const float fps = ImGui::GetIO().Framerate;

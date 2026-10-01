@@ -89,7 +89,7 @@ void Application::run()
             m_layer->onUpdate(deltaTime);
         }
         if (!m_layer || !m_layer->wantsKeyboard()) {
-            m_camera.handleInput(keys, deltaTime);
+            m_camera.update(keys, deltaTime);
         }
         m_renderer.render(m_scene, m_camera);
     }
@@ -100,6 +100,7 @@ void Application::handleEvent(const SDL_Event &event)
     if (m_layer && m_layer->onEvent(event)) {
         return;
     }
+    m_camera.handleEvent(event);
 
     switch (event.type) {
     case SDL_EVENT_QUIT:
