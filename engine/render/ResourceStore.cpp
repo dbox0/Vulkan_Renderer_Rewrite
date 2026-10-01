@@ -32,17 +32,18 @@ void ResourceStore::shutdown()
     }
 
     for (gfx::Image &img : m_images) {
-        m_ctx.destroyImage(img);
+        m_ctx.retire(img);
     }
     m_images.clear();
 
     for (VkSampler sampler : m_samplers) {
-        vkDestroySampler(m_ctx.device(), sampler, nullptr);
+        m_ctx.retire([device = m_ctx.device(),sampler]
+        {vkDestroySampler(device,sampler,nullptr);});
     }
     m_samplers.clear();
 
     for (gfx::Buffer &buff : m_buffers) {
-        m_ctx.destroyBuffer(buff);
+        m_ctx.retire(buff);
     }
     m_buffers.clear();
 
@@ -53,19 +54,23 @@ void ResourceStore::shutdown()
 
 void ResourceStore::clearModelData()
 {
-    // The fallback image, sampler and texture are always first, the default material too.
+    // The fallback image, sampler and texture are always first
+    // default material too.
     for (size_t i = m_fallbackImageId; i < m_images.size(); ++i) {
-        m_ctx.destroyImage(m_images[i]);
+        m_ctx.retire(m_images[i]);
     }
     m_images.resize(m_fallbackImageId);
 
     for (size_t i = m_fallbackSamplerId; i < m_samplers.size(); ++i) {
-        vkDestroySampler(m_ctx.device(), m_samplers[i], nullptr);
+        m_ctx.retire([device = m_ctx.device(),sampler = m_samplers[i]]{
+            vkDestroySampler(device, sampler, nullptr);
+        });
+
     }
     m_samplers.resize(m_fallbackSamplerId);
 
     for (gfx::Buffer &buff : m_buffers) {
-        m_ctx.destroyBuffer(buff);
+        m_ctx.retire(buff);
     }
     m_buffers.clear();
     m_materialBufferId = 0;

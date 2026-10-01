@@ -16,8 +16,10 @@ void GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 
 void GeometryStore::shutdown()
 {
-    m_ctx.destroyBuffer(m_vertexBuffer);
-    m_ctx.destroyBuffer(m_indexBuffer);
+    m_ctx.retire(m_vertexBuffer);
+    m_ctx.retire(m_indexBuffer);
+    m_vertexBuffer = {};
+    m_indexBuffer = {};
     m_meshes.clear();
     m_vertices.clear();
     m_indices.clear();

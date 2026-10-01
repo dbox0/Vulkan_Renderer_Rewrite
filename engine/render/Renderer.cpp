@@ -183,6 +183,15 @@ void Renderer::render(Scene &scene, const Camera &camera)
 
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
     m_ctx.queue().wait(frame.submitValue);
+    m_ctx.collect();
+
+    m_ctx.retire(m_ctx.createBuffer(1 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, false, "retire test"));
+
+    /*if (m_frameNumber % 60 == 0) {
+        VmaTotalStatistics stats{};
+        vmaCalculateStatistics(m_ctx.allocator(),&stats);
+        core::log(std::format("allocated {} KB", stats.total.statistics.allocationBytes / 1024));
+    }*/
 
     // A failed acquire consumes nothing: the frame number only advances once a frame is submitted.
     uint32_t imageIndex = 0;
@@ -203,8 +212,6 @@ void Renderer::render(Scene &scene, const Camera &camera)
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
     recordFrame(frame, imageIndex, drawCount);
-
-    const uint64_t signalValue = m_frameNumber + 1;
 
     const VkSemaphoreSubmitInfo waitInfo
     {

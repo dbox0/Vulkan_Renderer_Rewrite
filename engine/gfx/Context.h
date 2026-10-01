@@ -5,6 +5,7 @@
 #include "Queue.h"
 #include "Resources.h"
 #include "Vk.h"
+#include "DeletionQueue.h"
 
 struct SDL_Window;
 
@@ -60,6 +61,12 @@ public:
         setObjectName(type, reinterpret_cast<uint64_t>(handle), name);
     }
 
+    void retire(Buffer buffer);
+    void retire(Image image);
+    void retire(std::function<void()> destroy);
+    void collect();
+
+
 private:
     void createInstance();
     void createDebugMessenger();
@@ -77,6 +84,7 @@ private:
     uint32_t                 m_queueFamily    = UINT32_MAX;
     VmaAllocator             m_allocator      = nullptr;
     VkCommandPool            m_immediatePool  = VK_NULL_HANDLE;
+    DeletionQueue            m_deletionQueue;
 };
 
 }
