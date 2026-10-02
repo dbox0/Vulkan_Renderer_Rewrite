@@ -21,6 +21,7 @@ namespace gfx {
 class Camera;
 class GeometryStore;
 class ResourceStore;
+struct PushConstants;
 
 namespace render
 {
@@ -71,7 +72,7 @@ private:
 
     // Fills this frame's indirect + render-item buffers. Returns the draw count written.
     DrawList writeDrawCommands(Frame &frame, const glm::mat4 &viewProj);
-    void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws);
+    void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc);
 
     gfx::Context   &m_ctx;
     gfx::StagingUploader &m_uploader;
@@ -91,6 +92,9 @@ private:
     uint32_t              m_maxDraws = 0;
     std::vector<DrawItem> m_drawItems;   // reused across frames
     Overlay               m_overlay;
+
+    std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
+
 };
 
 } // namespace render

@@ -9,7 +9,12 @@
 
 layout(push_constant, scalar) uniform PushBlock
 {
-    PushConstants frameConsts;
+    PushConstants pc;
+};
+
+layout(buffer_reference, scalar) readonly buffer FrameDataPtr
+{
+    FrameData data;
 };
 
 layout(buffer_reference, scalar) readonly buffer VertexPtr
@@ -27,7 +32,6 @@ layout(buffer_reference, scalar) readonly buffer RenderItemPtr
     RenderItem renderItems[];
 };
 
-
 layout (location = 0) out vec3 outColor;
 layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outUV;
@@ -36,16 +40,13 @@ layout (location = 4) out flat vec4 outMaterialBaseColor;
 
 void main()
 {
-    VertexPtr vBuffer = VertexPtr(frameConsts.vertexBufferAddress);
-    Vertex v = vBuffer.vertices[gl_VertexIndex];
+    FrameDataPtr frame = FrameDataPtr(pc.frame);
 
-    RenderItemPtr riBuffer = RenderItemPtr(frameConsts.renderItemsAddress);
-    RenderItem ri = riBuffer.renderItems[gl_InstanceIndex];
+    Vertex v = VertexPtr(frame.data.vertices).vertices[gl_VertexIndex];
+    RenderItem ri = RenderItemPtr(pc.draws).renderItems[gl_InstanceIndex];
+    Material material = MaterialPtr(frame.data.materials).materials[ri.materialIndex];
 
-    MaterialPtr matBuff = MaterialPtr(frameConsts.materialBufferAddress);
-    Material material = matBuff.materials[ri.materialIndex];
-
-    gl_Position = ri.wvp * vec4(v.position, 1.0);
+    gl_Position = frame.data.viewProj * ri.worldMatrix * vec4(v.position, 1.0);
     outColor = v.color;
     outNormal = mat3x3(transpose(inverse(ri.worldMatrix))) * v.normal;
     outUV = v.uv;

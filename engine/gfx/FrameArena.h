@@ -8,7 +8,7 @@ namespace gfx {
 class Context;
 
 struct ArenaAllocation {
-    void           *cpu     = nullptr;
+    void           *cpu     = nullptr;          // Pointer to allocation
     VkBuffer        buffer  = VK_NULL_HANDLE;
     VkDeviceSize    offset  = 0;
     VkDeviceAddress address = 0;

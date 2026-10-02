@@ -153,7 +153,6 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &vi
             };
             items[i] = RenderItem
             {
-                .wvp = viewProj * item.worldMatrix,
                 .worldMatrix = item.worldMatrix,
                 .materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0
             };
@@ -167,7 +166,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
 {
     if (m_swapchain.needsRecreate()) {
         if (!m_swapchain.recreate()) {
-            return;   // the window has no area right now
+            return;
         }
         resizeDepthIfNeeded();
     }
@@ -175,33 +174,43 @@ void Renderer::render(Scene &scene, const Camera &camera)
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
     m_ctx.queue().wait(frame.submitValue);
     m_ctx.collect();
-    frame.arena.reset();
-    /*
-    m_ctx.retire(m_ctx.createBuffer(1 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, gfx::Context::MemoryIntent::Upload, "retire test"));
-    if (m_frameNumber % 60 == 0) {
-        VmaTotalStatistics stats{};
-        vmaCalculateStatistics(m_ctx.allocator(),&stats);
-        core::log(std::format("allocated {} KB", stats.total.statistics.allocationBytes / 1024));
-    }*/
 
-    // A failed acquire consumes nothing: the frame number only advances once a frame is submitted.
+
     uint32_t imageIndex = 0;
     if (!m_swapchain.acquire(frame.imageAcquired, imageIndex)) {
         return;
     }
 
+    frame.arena.reset();
+
+    // Alloc FrameData
+    auto frameAlloc = frame.arena.allocate(sizeof(FrameData));
+    auto *frameDataPtr = static_cast<FrameData *>(frameAlloc.cpu);
+
+
     const VkExtent2D extent = m_swapchain.extent();
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+
+    frameDataPtr->viewProj       = camera.viewProjection(aspectRatio);
+    frameDataPtr->view           = camera.view();
+    frameDataPtr->proj           = camera.projection(aspectRatio) ;
+    frameDataPtr->cameraPosition = glm::vec4(camera.position,0.0f);
+    frameDataPtr->vertices       = m_geometry.vertexBufferAddress();
+    frameDataPtr->materials      = m_resources.materialBufferAddress();
+    frameDataPtr->time           =  std::chrono::duration<float>(std::chrono::steady_clock::now() - m_startTime).count();
+    frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
+
 
     DrawList draws;
     if (m_geometry.uploaded()) {
         scene.collectDrawItems(m_drawItems);
         draws = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
     }
-    frame.arena.flush(m_ctx);
+
+    const PushConstants pc {frameAlloc.address, draws.items.address};
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
-    recordFrame(frame, imageIndex, draws);
+    recordFrame(frame, imageIndex, draws, pc);
 
     const VkSemaphoreSubmitInfo waitInfo
     {
@@ -233,6 +242,8 @@ void Renderer::render(Scene &scene, const Camera &camera)
         .signalSemaphoreInfoCount = static_cast<uint32_t>(signalInfos.size()),
         .pSignalSemaphoreInfos = signalInfos.data()
     };
+
+    frame.arena.flush(m_ctx);
     m_uploader.flush();
     frame.submitValue = m_ctx.queue().submit(submitInfo);
     ++m_frameNumber;
@@ -241,7 +252,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
 
 }
 
-void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
+void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc)
 {
     const VkCommandBuffer cmd = frame.commandBuffer;
     const VkCommandBufferBeginInfo beginInfo
@@ -324,13 +335,8 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
             const VkDescriptorSet globalSet = m_resources.globalDescriptorSet();
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &globalSet, 0, nullptr);
 
-            const PushConstants push
-            {
-                .vertexBufferAddress = m_geometry.vertexBufferAddress(),
-                .materialBufferAddress = m_resources.materialBufferAddress(),
-                .renderItemsAddress = draws.items.address
-            };
-            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(push), &push);
+
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
             vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);

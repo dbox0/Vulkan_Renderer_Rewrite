@@ -27,18 +27,26 @@ struct Material
     uint textureIndex;
 };
 
+struct FrameData {
+    mat4        viewProj;
+    mat4        view;
+    mat4        proj;
+    vec4        cameraPosition;
+    uint64_t    vertices;
+    uint64_t    materials;
+    float       time;
+    uint        frameIndex;
+};
+
 struct RenderItem
 {
-    mat4 wvp;
     mat4 worldMatrix;
     uint materialIndex;
 };
 
-struct PushConstants
-{
-    uint64_t vertexBufferAddress;
-    uint64_t materialBufferAddress;
-    uint64_t renderItemsAddress;
+struct PushConstants{
+    uint64_t frame;
+    uint64_t draws;
 };
 
 #ifdef __cplusplus
@@ -52,15 +60,10 @@ static_assert(sizeof(Material) == 20);
 static_assert(offsetof(Material, baseColor) == 0);
 static_assert(offsetof(Material, textureIndex) == 16);
 
-static_assert(sizeof(RenderItem) == 132);
-static_assert(offsetof(RenderItem, wvp) == 0);
-static_assert(offsetof(RenderItem, worldMatrix) == 64);
-static_assert(offsetof(RenderItem, materialIndex) == 128);
+static_assert(sizeof(RenderItem) == 68);
+static_assert(offsetof(RenderItem, worldMatrix) == 0);
+static_assert(offsetof(RenderItem, materialIndex) == 64);
 
-static_assert(sizeof(PushConstants) == 24);
-static_assert(offsetof(PushConstants, vertexBufferAddress) == 0);
-static_assert(offsetof(PushConstants, materialBufferAddress) == 8);
-static_assert(offsetof(PushConstants, renderItemsAddress) == 16);
 #endif
 
 #endif
