@@ -32,11 +32,11 @@ struct SubMesh
 
 struct Image   // decoded pixels in RAM
 {
-    int width;
-    int height;
-    int channels;
-    unsigned char *data;
-    VkFormat format;
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char *data = nullptr;
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
 };
 struct Material
 {
