@@ -27,6 +27,9 @@ private:
     std::vector<Image>    loadImages(const tg3_model &model, const std::filesystem::path &imageDir) const;
     std::vector<uint32_t> uploadImages(const std::vector<Image> &images);
     std::vector<uint32_t> loadSamplers(const tg3_model &model);
+
+    void assignImageColorSpaces(const tg3_model &model, std::vector<Image> &images) const;
+
     std::vector<uint32_t> loadTextures(const tg3_model &model,
                                        const std::vector<uint32_t> &imageIds,
                                        const std::vector<uint32_t> &samplerIds);

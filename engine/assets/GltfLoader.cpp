@@ -52,6 +52,7 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
     const std::filesystem::path imageDir = filepath.parent_path();
 
     std::vector<Image> images = loadImages(model, imageDir);   // RAM
+    assignImageColorSpaces(model, images);
     std::vector<uint32_t> imageIds = uploadImages(images);     // VRAM
 
     for (const Image &image : images) {
@@ -373,6 +374,29 @@ std::vector<uint32_t> GltfLoader::loadSamplers(const tg3_model &model)
     return samplerIds;
 }
 
+void GltfLoader::assignImageColorSpaces(const tg3_model &model, std::vector<Image> &images) const
+{
+    // Anything no material references keeps the linear default; it is never
+    // sampled anyway.
+    auto markSrgb = [&](int32_t textureIndex) {
+        if (textureIndex < 0 || static_cast<uint32_t>(textureIndex) >= model.textures_count) {
+            return;
+        }
+        const int32_t source = model.textures[textureIndex].source;
+        if (source >= 0 && static_cast<size_t>(source) < images.size()) {
+            images[source].format = VK_FORMAT_R8G8B8A8_SRGB;
+        }
+    };
+
+    for (uint32_t i = 0; i < model.materials_count; ++i) {
+        // Only base colour and emissive are colour. Metallic-roughness,
+        // normal and occlusion are all data.
+        markSrgb(model.materials[i].pbr_metallic_roughness.base_color_texture.index);
+        markSrgb(model.materials[i].emissive_texture.index);
+    }
+}
+
+
 std::vector<Image> GltfLoader::loadImages(const tg3_model &model,
                                           const std::filesystem::path &imageDir) const
 {
@@ -389,7 +413,7 @@ std::vector<Image> GltfLoader::loadImages(const tg3_model &model,
         }
 
         const std::filesystem::path imagePath = imageDir / model.images[i].uri.data;
-        core::log(std::format("Loading image {} / {}: {}", i + 1, model.images_count, model.images[i].uri.data));
+        core::log(std::format("Loading image {} / {}: {} ", i + 1, model.images_count, model.images[i].uri.data));
 
         img.data = stbi_load(imagePath.string().c_str(), &img.width, &img.height, &img.channels, 4);
         if (!img.data) {
@@ -405,7 +429,7 @@ std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
     for (size_t i = 0; i < images.size(); ++i) {
         const Image &image = images[i];
         imageIds[i] = image.data
-            ? m_resources.addImage(image.data, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height))
+            ? m_resources.addImage(image.data, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height),image.format)
             : m_resources.fallbackImageId();
     }
     return imageIds;

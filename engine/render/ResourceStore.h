@@ -32,7 +32,7 @@ public:
 
     // Records the upload into commandBuffer; the returned staging buffer must
     // be destroyed by the caller after submit. Pixels are RGBA8.
-    uint32_t addImage(const unsigned char *data, uint32_t width, uint32_t height);
+    uint32_t addImage(const unsigned char *data, uint32_t width, uint32_t height, VkFormat format);
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
     uint32_t addMaterial(const Material &material);

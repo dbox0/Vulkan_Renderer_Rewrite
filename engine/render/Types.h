@@ -3,6 +3,7 @@
 #include <vector>
 #include <glm/detail/type_quat.hpp>
 #include <string>
+#include "gfx/Vk.h"
 
 struct SubMesh;
 
@@ -35,6 +36,7 @@ struct Image   // decoded pixels in RAM
     int height;
     int channels;
     unsigned char *data;
+    VkFormat format;
 };
 struct Material
 {

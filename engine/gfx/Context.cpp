@@ -214,7 +214,8 @@ namespace gfx {
             !supported12.descriptorBindingSampledImageUpdateAfterBind ||
             !supported12.shaderSampledImageArrayNonUniformIndexing ||
             !supported11.shaderDrawParameters ||
-            !supported.features.multiDrawIndirect || !supported.features.shaderInt64) {
+            !supported.features.multiDrawIndirect || !supported.features.shaderInt64 ||
+            !supported.features.drawIndirectFirstInstance){
             core::fatal("The GPU is missing a required Vulkan 1.3 feature");
         }
 

@@ -79,9 +79,9 @@ void ResourceStore::clearModelData()
 }
 
 
-uint32_t ResourceStore::addImage(const unsigned char *data, uint32_t width, uint32_t height)
+uint32_t ResourceStore::addImage(const unsigned char *data, uint32_t width, uint32_t height, VkFormat format)
 {
-    const gfx::Image image = m_ctx.createImage({width, height}, VK_FORMAT_R8G8B8A8_SRGB,
+    const gfx::Image image = m_ctx.createImage({width, height}, format,
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, "Image");
     m_uploader.uploadImage(image, data, VkDeviceSize{width} * height * 4);
 
@@ -143,7 +143,7 @@ void ResourceStore::createFallbackTexture()
     // Magenta 1x1. Must be the first image, sampler and texture created, so
     // it always occupies descriptor slot 0.
     const uint32_t purplePixelData = 0xFFFF00FF;
-    m_fallbackImageId = addImage(reinterpret_cast<const unsigned char *>(&purplePixelData), 1, 1);
+    m_fallbackImageId = addImage(reinterpret_cast<const unsigned char *>(&purplePixelData), 1, 1, VK_FORMAT_R8G8B8A8_SRGB);
 
     const VkSamplerCreateInfo samplerInfo
     {
