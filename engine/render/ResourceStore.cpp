@@ -10,7 +10,7 @@ void ResourceStore::initialize()
 
     // Material index 0 is the default, used by primitives with no material.
     // Without it a model with no materials would read through a null material pointer.
-    addMaterial(Material{ .textureIndex = textureDescriptorSlot(m_fallbackTextureId) });
+    addMaterial(Material{ .baseColor = glm::vec4(1.0f), .textureIndex = textureDescriptorSlot(m_fallbackTextureId) });
 }
 
 void ResourceStore::shutdown()

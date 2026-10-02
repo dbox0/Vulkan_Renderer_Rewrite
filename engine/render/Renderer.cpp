@@ -16,13 +16,6 @@ namespace render
 namespace
 {
 
-// Must match the push constant block in shader.vert. One 128-byte range is shared by every pipeline.
-struct PushConstants
-{
-    uint64_t vertexBufferAddress   = 0;
-    uint64_t materialBufferAddress = 0;
-    uint64_t renderItemsAddress    = 0;
-};
 constexpr uint32_t PushConstantSize = 128;
 static_assert(sizeof(PushConstants) <= PushConstantSize);
 

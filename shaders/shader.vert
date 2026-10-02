@@ -1,22 +1,15 @@
 #version 460
 
+#extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_buffer_reference : require
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-layout(push_constant, scalar) uniform FrameConstants
-{
-    uint64_t vertexBufferAddress;
-    uint64_t materialBufferAddress;
-    uint64_t renderItemBufferAddress;
-} frameConsts;
+#include "shared/GpuTypes.h"
 
-struct Vertex
+layout(push_constant, scalar) uniform PushBlock
 {
-    vec3 position;
-    vec3 color;
-    vec3 normal;
-    vec2 uv;
+    PushConstants frameConsts;
 };
 
 layout(buffer_reference, scalar) readonly buffer VertexPtr
@@ -24,22 +17,9 @@ layout(buffer_reference, scalar) readonly buffer VertexPtr
     Vertex vertices[];
 };
 
-struct Material
-{
-    vec4 baseColor;
-    uint colorTextureIndex;
-};
-
 layout(buffer_reference, scalar) readonly buffer MaterialPtr
 {
     Material materials[];
-};
-
-struct RenderItem
-{
-    mat4x4 wvp;
-    mat4x4 worldMatrix;
-    uint materialIndex;
 };
 
 layout(buffer_reference, scalar) readonly buffer RenderItemPtr
@@ -59,7 +39,7 @@ void main()
     VertexPtr vBuffer = VertexPtr(frameConsts.vertexBufferAddress);
     Vertex v = vBuffer.vertices[gl_VertexIndex];
 
-    RenderItemPtr riBuffer = RenderItemPtr(frameConsts.renderItemBufferAddress);
+    RenderItemPtr riBuffer = RenderItemPtr(frameConsts.renderItemsAddress);
     RenderItem ri = riBuffer.renderItems[gl_InstanceIndex];
 
     MaterialPtr matBuff = MaterialPtr(frameConsts.materialBufferAddress);
@@ -69,6 +49,6 @@ void main()
     outColor = v.color;
     outNormal = mat3x3(transpose(inverse(ri.worldMatrix))) * v.normal;
     outUV = v.uv;
-    outTextureIndex = material.colorTextureIndex;
+    outTextureIndex = material.textureIndex;
     outMaterialBaseColor = material.baseColor;
 }

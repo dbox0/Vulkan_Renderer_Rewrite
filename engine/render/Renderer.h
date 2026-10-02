@@ -49,14 +49,6 @@ public:
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
 
 private:
-    // Per-draw data the vertex shader pulls through renderItemsAddress.
-    struct RenderItem
-    {
-        glm::mat4 wvp;
-        glm::mat4 worldMatrix;
-        uint32_t  materialIndex = 0;
-    };
-
     struct Frame
     {
         VkCommandPool   commandPool   = VK_NULL_HANDLE;

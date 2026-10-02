@@ -4,12 +4,70 @@
 
 #include <array>
 #include <fstream>
+#include <memory>
 #include <sstream>
 
 #include "Context.h"
 
 namespace gfx
 {
+
+namespace
+{
+
+class FileIncluder final : public shaderc::CompileOptions::IncluderInterface
+{
+public:
+    explicit FileIncluder(std::filesystem::path root) : m_root(std::move(root)) {}
+
+    shaderc_include_result *GetInclude(const char *requested, shaderc_include_type type,
+                                       const char *requesting, size_t) override
+    {
+        auto *entry = new Entry;
+
+        std::filesystem::path path = std::filesystem::path(requesting).parent_path() / requested;
+        if (type == shaderc_include_type_standard || !std::filesystem::exists(path)) {
+            path = m_root / requested;
+        }
+
+        std::ifstream file(path);
+        if (file) {
+            std::stringstream text;
+            text << file.rdbuf();
+            entry->name = path.string();
+            entry->content = text.str();
+        } else {
+            entry->content = std::format("Cannot open include {}", requested);
+        }
+
+        entry->result = shaderc_include_result
+        {
+            .source_name = entry->name.data(),
+            .source_name_length = entry->name.size(),
+            .content = entry->content.data(),
+            .content_length = entry->content.size(),
+            .user_data = entry
+        };
+        return &entry->result;
+    }
+
+    void ReleaseInclude(shaderc_include_result *result) override
+    {
+        delete static_cast<Entry *>(result->user_data);
+    }
+
+private:
+    struct Entry
+    {
+        std::string name;
+        std::string content;
+        shaderc_include_result result{};
+    };
+
+    std::filesystem::path m_root;
+};
+
+}
 
 VkShaderModule loadShader(const Context &ctx, const std::filesystem::path &path)
 {
@@ -31,6 +89,7 @@ VkShaderModule loadShader(const Context &ctx, const std::filesystem::path &path)
     }
 
     shaderc::CompileOptions options;
+    options.SetIncluder(std::make_unique<FileIncluder>(path.parent_path()));
     options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
     options.SetTargetSpirv(shaderc_spirv_version_1_6);
 #ifndef NDEBUG

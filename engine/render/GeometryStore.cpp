@@ -1,5 +1,6 @@
 #include "GeometryStore.h"
 
+#include <algorithm>
 #include <format>
 
 #include "gfx/Context.h"
@@ -46,6 +47,7 @@ size_t GeometryStore::appendVertices(size_t count)
 
     const size_t start = m_vertOffset;
     m_vertOffset += count;
+    std::fill_n(m_vertices.begin() + static_cast<std::ptrdiff_t>(start), count, Vertex{ .color = glm::vec3(1.0f) });
     return start;
 }
 
