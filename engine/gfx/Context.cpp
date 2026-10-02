@@ -418,7 +418,7 @@ namespace gfx {
         };
         const VmaAllocationCreateInfo allocInfo{.usage = VMA_MEMORY_USAGE_AUTO};
 
-        Image image{.format = format, .extent = extent};
+        Image image{.format = format, .extent = extent, .mipLevels = 1};
         VK_CHECK(vmaCreateImage(m_allocator, &imageInfo, &allocInfo, &image.image, &image.allocation, nullptr));
 
         const VkImageViewCreateInfo viewInfo
@@ -432,8 +432,8 @@ namespace gfx {
                 .aspectMask = isDepthFormat(format)
                                   ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
                                   : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
-                .levelCount = 1,
-                .layerCount = 1
+                .levelCount = image.mipLevels,
+                .layerCount = 1,
             }
         };
         VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &image.view));
@@ -530,6 +530,10 @@ namespace gfx {
 
     void Context::retire(std::function<void()> destroy) {
         m_deletionQueue.push(m_queue.lastSubmitted() + 1, std::move(destroy));
+    }
+    void Context::retireAt(uint64_t safeAfter,std::function<void()> fn) {
+        m_deletionQueue.push(safeAfter, std::move(fn));
+
     }
     void Context::retire(Buffer buffer) {
         if (!buffer.buffer) {

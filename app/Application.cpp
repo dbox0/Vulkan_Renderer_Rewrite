@@ -21,6 +21,7 @@ void Application::init()
     }
 
     m_ctx.init(m_window);
+    m_uploader.init(m_ctx,64ull << 20);
     m_swapchain.create(m_window);
 
     // Must come before the renderer: the pipeline layout needs the global descriptor set layout.
@@ -145,6 +146,7 @@ void Application::shutdown()
     m_geometry.shutdown();
     m_resources.shutdown();
     m_swapchain.destroy();
+    m_uploader.destroy();
     m_ctx.shutdown();
 
     SDL_DestroyWindow(m_window);

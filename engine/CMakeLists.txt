@@ -10,7 +10,9 @@ add_library(gfx STATIC
     gfx/Queue.cpp
     gfx/DeletionQueue.h
     gfx/FrameArena.cpp
-    gfx/FrameArena.h)
+    gfx/FrameArena.h
+        gfx/StagingUploader.cpp
+        gfx/StagingUploader.h)
 target_link_libraries(gfx
     PUBLIC core Vulkan::Headers Vulkan::volk
     PRIVATE SDL3::SDL3 PkgConfig::SHADERC)

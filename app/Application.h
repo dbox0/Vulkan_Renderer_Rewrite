@@ -7,6 +7,7 @@
 #include "AppLayer.h"
 #include "core/FrameStats.h"
 #include "gfx/Context.h"
+#include "gfx/StagingUploader.h"
 #include "gfx/Swapchain.h"
 #include "render/GeometryStore.h"
 #include "render/Renderer.h"
@@ -56,8 +57,11 @@ private:
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.
     gfx::Context     m_ctx;
     gfx::Swapchain   m_swapchain{ m_ctx };
+
     ResourceStore    m_resources{ m_ctx };
     GeometryStore    m_geometry{ m_ctx };
+    gfx::StagingUploader  m_uploader;
+
     Scene            m_scene;
     Camera           m_camera;
     render::Renderer m_renderer{ m_ctx, m_swapchain, m_resources, m_geometry };

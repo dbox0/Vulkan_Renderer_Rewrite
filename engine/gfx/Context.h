@@ -65,6 +65,7 @@ public:
     void retire(Buffer buffer);
     void retire(Image image);
     void retire(std::function<void()> destroy);
+    void retireAt(uint64_t safeAfter, std::function<void()> fn);
     void collect();
 
 

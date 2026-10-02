@@ -20,6 +20,7 @@ struct Image
     VmaAllocation allocation = nullptr;
     VkFormat      format     = VK_FORMAT_UNDEFINED;
     VkExtent2D    extent{};
+    uint32_t     mipLevels = 1; // For now (Mipmapping later)
 };
     enum class MemoryIntent { GpuOnly, Upload, Readback };
 }
