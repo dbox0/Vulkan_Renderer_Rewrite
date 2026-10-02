@@ -23,8 +23,10 @@ endif()
 
 # Shaders are compiled at runtime from <bin>/shaders.
 add_custom_target(copy_shaders ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${PROJECT_SOURCE_DIR}/shaders ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders)
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/shaders ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${PROJECT_SOURCE_DIR}/engine/shared ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/shared)
 add_dependencies(vulkanapp copy_shaders)
 if(BUILD_EDITOR)
     add_dependencies(vulkaneditor copy_shaders)
