@@ -402,32 +402,11 @@ std::vector<Image> GltfLoader::loadImages(const tg3_model &model,
 std::vector<uint32_t> GltfLoader::uploadImages(const std::vector<Image> &images)
 {
     std::vector<uint32_t> imageIds(images.size());
-    if (images.empty()) {
-        return imageIds;
-    }
-
-    std::vector<gfx::Buffer> stagingBuffers;
-    stagingBuffers.reserve(images.size());
-
-    m_ctx.immediateSubmit([&](VkCommandBuffer commandBuffer) {
-        for (size_t i = 0; i < images.size(); ++i) {
-            const Image &image = images[i];
-            if (!image.data) {
-                imageIds[i] = m_resources.fallbackImageId();
-                continue;
-            }
-
-            gfx::Buffer staging;
-            imageIds[i] = m_resources.addImage(commandBuffer, image.data,
-                                               static_cast<uint32_t>(image.width),
-                                               static_cast<uint32_t>(image.height), staging);
-            stagingBuffers.push_back(staging);
-        }
-    });
-
-    // immediateSubmit waited for the copies, so the staging buffers can go.
-    for (gfx::Buffer &staging : stagingBuffers) {
-        m_ctx.destroyBuffer(staging);
+    for (size_t i = 0; i < images.size(); ++i) {
+        const Image &image = images[i];
+        imageIds[i] = image.data
+            ? m_resources.addImage(image.data, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height))
+            : m_resources.fallbackImageId();
     }
     return imageIds;
 }

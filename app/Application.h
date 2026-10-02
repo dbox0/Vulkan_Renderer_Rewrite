@@ -45,7 +45,6 @@ private:
     static constexpr size_t   MaxNodes          = 4096;
     static constexpr size_t   VertexBudgetBytes = 64ull * 1024 * 1024;
     static constexpr size_t   IndexBudgetBytes  = 32ull * 1024 * 1024;
-    static constexpr uint32_t MaxDrawsPerFrame  = 8192;
 
     SDL_Window *m_window    = nullptr;
     bool        m_running   = false;
@@ -56,12 +55,13 @@ private:
 
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.
     gfx::Context     m_ctx;
-    gfx::Swapchain   m_swapchain{ m_ctx };
-    ResourceStore    m_resources{ m_ctx };
-    GeometryStore    m_geometry{ m_ctx };
     gfx::StagingUploader m_uploader;
+    gfx::Swapchain   m_swapchain{ m_ctx };
+    ResourceStore        m_resources{ m_ctx, m_uploader };
+    GeometryStore        m_geometry{ m_ctx, m_uploader };
+
 
     Scene            m_scene;
     Camera           m_camera;
-    render::Renderer m_renderer{ m_ctx, m_swapchain, m_resources, m_geometry };
+    render::Renderer m_renderer{ m_ctx, m_swapchain, m_uploader, m_resources, m_geometry };
 };

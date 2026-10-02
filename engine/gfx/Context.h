@@ -42,20 +42,9 @@ public:
 
     // Flushes CPU writes to a host-visible buffer; a no-op on coherent memory.
     void flush(const Buffer &buffer) const;
-
-    // Copies into any buffer through a staging buffer. Blocks until the GPU is done.
-    void upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset = 0);
-
+    
     Image createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name) const;
     void  destroyImage(Image &image) const;
-
-    // Records an sRGB RGBA8 texture upload into cmd. outStaging must be destroyed after the submit.
-    void createImage2D(VkCommandBuffer cmd, const unsigned char *pixels, uint32_t width, uint32_t height,
-                       Image &outImage, Buffer &outStaging, const char *name) const;
-
-    // Records, submits and waits. Load-time only.
-    void immediateSubmit(const std::function<void(VkCommandBuffer)> &record);
-
     template <typename Handle>
     void setName(VkObjectType type, Handle handle, const char *name) const
     {

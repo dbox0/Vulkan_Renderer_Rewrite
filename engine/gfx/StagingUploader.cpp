@@ -341,7 +341,7 @@ namespace gfx {
         if (!m_oneOff.empty()) {
 
             m_ctx->retireAt(value, [ctx = m_ctx, buffers = std::move(m_oneOff)]() mutable {
-                for (Buffer &b : buffers) ctx->destroyBuffer(b);
+                for (Buffer &b : buffers) ctx->retire(b);
             });
             m_oneOff.clear();
         }

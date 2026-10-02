@@ -9,6 +9,7 @@
 #include "gfx/Pipeline.h"
 #include "scene/Camera.h"
 #include "gfx/FrameArena.h"
+#include "gfx/StagingUploader.h"
 
 namespace render
 {
@@ -238,7 +239,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
         .signalSemaphoreInfoCount = static_cast<uint32_t>(signalInfos.size()),
         .pSignalSemaphoreInfos = signalInfos.data()
     };
-    //m_ctx.queue().submit(submitInfo);
+    m_uploader.flush();
     frame.submitValue = m_ctx.queue().submit(submitInfo);
     ++m_frameNumber;
 

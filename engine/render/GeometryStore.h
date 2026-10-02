@@ -5,7 +5,8 @@
 #include "Types.h"
 #include "gfx/Resources.h"
 
-namespace gfx { class Context; }
+
+namespace gfx { class Context; class StagingUploader; }
 
 // single global vertex + index buffer
 // Vertices and indices have NO reserved slot 0
@@ -14,7 +15,7 @@ namespace gfx { class Context; }
 class GeometryStore
 {
 public:
-    explicit GeometryStore(gfx::Context &ctx) : m_ctx(ctx) {}
+    explicit GeometryStore(gfx::Context &ctx, gfx::StagingUploader &uploader) : m_ctx(ctx), m_uploader(uploader) {}
     GeometryStore(const GeometryStore &) = delete;
     GeometryStore &operator=(const GeometryStore &) = delete;
 
@@ -40,6 +41,7 @@ public:
 
 private:
     gfx::Context &m_ctx;
+    gfx::StagingUploader &m_uploader;
 
     std::vector<Vertex>   m_vertices;
     std::vector<uint32_t> m_indices;

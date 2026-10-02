@@ -53,6 +53,7 @@ bool Application::loadData(const std::filesystem::path &modelPath)
     m_resources.updateTextureDescriptors();
     m_resources.uploadMaterialBuffer();
 
+    m_uploader.flush();
     core::log(std::format("Loaded {} meshes, {} materials", m_geometry.meshCount(), m_resources.materialCount()));
     return true;
 }
@@ -80,6 +81,10 @@ void Application::run()
         const float deltaTime = static_cast<float>(now - prevTime) * 1e-9f;
         prevTime = now;
         m_frameStats.add(deltaTime * 1000.0f);
+        const auto up = m_uploader.takeStats();
+        m_frameStats.uploadBytes = up.bytes;
+        m_frameStats.uploadStalls = up.stalls;
+        m_frameStats.uploadStallNs = up.stallNs;
 
         if (m_layer) {
             m_layer->onUpdate(deltaTime);
@@ -139,6 +144,7 @@ void Application::cyclePresentMode()
 
 void Application::shutdown()
 {
+    m_uploader.flush();
     if (m_ctx.device()) {
         vkDeviceWaitIdle(m_ctx.device());
     }
@@ -146,6 +152,7 @@ void Application::shutdown()
     m_geometry.shutdown();
     m_resources.shutdown();
     m_swapchain.destroy();
+
     m_uploader.destroy();
     m_ctx.shutdown();
 

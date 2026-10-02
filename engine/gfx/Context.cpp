@@ -308,6 +308,46 @@ namespace gfx {
         vkSetDebugUtilsObjectNameEXT(m_device, &info);
     }
 
+    Image Context::createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name) const {
+        const VkImageCreateInfo imageInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .format = format,
+            .extent{.width = extent.width, .height = extent.height, .depth = 1},
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .samples = VK_SAMPLE_COUNT_1_BIT,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = usage,
+            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        };
+        const VmaAllocationCreateInfo allocInfo{.usage = VMA_MEMORY_USAGE_AUTO};
+
+        Image image{.format = format, .extent = extent, .mipLevels = 1};
+        VK_CHECK(vmaCreateImage(m_allocator, &imageInfo, &allocInfo, &image.image, &image.allocation, nullptr));
+
+        const VkImageViewCreateInfo viewInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = image.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = format,
+            .subresourceRange
+            {
+                .aspectMask = isDepthFormat(format) ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
+                : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
+                .levelCount = image.mipLevels,
+                .layerCount = 1,
+            }
+        };
+        VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &image.view));
+
+        setName(VK_OBJECT_TYPE_IMAGE, image.image, name);
+        setName(VK_OBJECT_TYPE_IMAGE_VIEW, image.view, name);
+        return image;
+    }
+
     //  USAGE cheat sheet:
     //  Copied into with upload	TRANSFER_DST
     //  Copied from (staging)	TRANSFER_SRC
@@ -361,9 +401,6 @@ namespace gfx {
         buffer = Buffer{};
     }
 
-    void Context::write(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset) const {
-        VK_CHECK(vmaCopyMemoryToAllocation(m_allocator, data, dst.allocation, dstOffset, size));
-    }
 
     void Context::flush(const Buffer &buffer) const {
         VK_CHECK(vmaFlushAllocation(m_allocator, buffer.allocation, 0, VK_WHOLE_SIZE));
@@ -371,76 +408,6 @@ namespace gfx {
 
     void Context::invalidate(const Buffer &buffer) const {
         VK_CHECK(vmaInvalidateAllocation(m_allocator, buffer.allocation, 0, VK_WHOLE_SIZE));
-    }
-
-    void Context::upload(const Buffer &dst, const void *data, VkDeviceSize size, VkDeviceSize dstOffset) {
-        Buffer staging = createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "staging");
-        write(staging, data, size);
-
-        immediateSubmit([&](VkCommandBuffer cmd) {
-            const VkBufferCopy region{.srcOffset = 0, .dstOffset = dstOffset, .size = size};
-            vkCmdCopyBuffer(cmd, staging.buffer, dst.buffer, 1, &region);
-
-            // Make the copy visible to whatever reads the buffer in later submissions.
-            const VkMemoryBarrier2 barrier
-            {
-                .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2,
-                .srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT,
-                .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                .dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                .dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT
-            };
-            const VkDependencyInfo dependency
-            {
-                .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-                .memoryBarrierCount = 1,
-                .pMemoryBarriers = &barrier
-            };
-            vkCmdPipelineBarrier2(cmd, &dependency);
-        });
-
-        destroyBuffer(staging);
-    }
-
-    Image Context::createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name) const {
-        const VkImageCreateInfo imageInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-            .imageType = VK_IMAGE_TYPE_2D,
-            .format = format,
-            .extent{.width = extent.width, .height = extent.height, .depth = 1},
-            .mipLevels = 1,
-            .arrayLayers = 1,
-            .samples = VK_SAMPLE_COUNT_1_BIT,
-            .tiling = VK_IMAGE_TILING_OPTIMAL,
-            .usage = usage,
-            .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-        };
-        const VmaAllocationCreateInfo allocInfo{.usage = VMA_MEMORY_USAGE_AUTO};
-
-        Image image{.format = format, .extent = extent, .mipLevels = 1};
-        VK_CHECK(vmaCreateImage(m_allocator, &imageInfo, &allocInfo, &image.image, &image.allocation, nullptr));
-
-        const VkImageViewCreateInfo viewInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = image.image,
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = format,
-            .subresourceRange
-            {
-                .aspectMask = isDepthFormat(format)
-                                  ? VkImageAspectFlags{VK_IMAGE_ASPECT_DEPTH_BIT}
-                                  : VkImageAspectFlags{VK_IMAGE_ASPECT_COLOR_BIT},
-                .levelCount = image.mipLevels,
-                .layerCount = 1,
-            }
-        };
-        VK_CHECK(vkCreateImageView(m_device, &viewInfo, nullptr, &image.view));
-
-        setName(VK_OBJECT_TYPE_IMAGE, image.image, name);
-        setName(VK_OBJECT_TYPE_IMAGE_VIEW, image.view, name);
-        return image;
     }
 
     void Context::destroyImage(Image &image) const {
@@ -453,80 +420,6 @@ namespace gfx {
         image = Image{};
     }
 
-    void Context::createImage2D(VkCommandBuffer cmd, const unsigned char *pixels, uint32_t width, uint32_t height,
-                                Image &outImage, Buffer &outStaging, const char *name) const {
-        outImage = createImage({width, height}, VK_FORMAT_R8G8B8A8_SRGB,
-                               VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, name);
-
-        const VkDeviceSize byteSize = VkDeviceSize{width} * height * 4;
-        outStaging = createBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "texture staging");
-        write(outStaging, pixels, byteSize);
-
-        transition(cmd, {
-                       .image = outImage.image,
-                       .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-                       .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       .dstStage = VK_PIPELINE_STAGE_2_COPY_BIT,
-                       .dstAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT
-                   });
-
-        const VkBufferImageCopy region
-        {
-            .imageSubresource{.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
-            .imageExtent{.width = width, .height = height, .depth = 1}
-        };
-        vkCmdCopyBufferToImage(cmd, outStaging.buffer, outImage.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                               &region);
-
-        transition(cmd, {
-                       .image = outImage.image,
-                       .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                       .srcStage = VK_PIPELINE_STAGE_2_COPY_BIT,
-                       .srcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                       .dstStage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                       .dstAccess = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
-                   });
-    }
-
-    void Context::immediateSubmit(const std::function<void(VkCommandBuffer)> &record) {
-        const VkCommandBufferAllocateInfo allocInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = m_immediatePool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1
-        };
-        VkCommandBuffer cmd = VK_NULL_HANDLE;
-        VK_CHECK(vkAllocateCommandBuffers(m_device, &allocInfo, &cmd));
-
-        const VkCommandBufferBeginInfo beginInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
-        };
-        VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
-        {
-            const DebugLabel label(cmd, "Immediate submit");
-            record(cmd);
-        }
-        VK_CHECK(vkEndCommandBuffer(cmd));
-
-        const VkCommandBufferSubmitInfo cmdInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO,
-            .commandBuffer = cmd
-        };
-        const VkSubmitInfo2 submitInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO_2,
-            .commandBufferInfoCount = 1,
-            .pCommandBufferInfos = &cmdInfo
-        };
-        m_queue.wait(m_queue.submit(submitInfo));
-
-        vkFreeCommandBuffers(m_device, m_immediatePool, 1, &cmd);
-    }
 
     void Context::retire(std::function<void()> destroy) {
         m_deletionQueue.push(m_queue.lastSubmitted() + 1, std::move(destroy));

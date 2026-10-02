@@ -1,8 +1,7 @@
 #include "ResourceStore.h"
-
-#include <array>
-
 #include "gfx/Context.h"
+#include "gfx/StagingUploader.h"
+#include <array>
 
 void ResourceStore::initialize()
 {
@@ -80,15 +79,15 @@ void ResourceStore::clearModelData()
 }
 
 
-uint32_t ResourceStore::addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
-                                 uint32_t width, uint32_t height, gfx::Buffer &outStagingBuffer)
+uint32_t ResourceStore::addImage(const unsigned char *data, uint32_t width, uint32_t height)
 {
-    gfx::Image gpuImage;
-    m_ctx.createImage2D(commandBuffer, data, width, height, gpuImage, outStagingBuffer, "texture");
-    m_images.push_back(gpuImage);
+    const gfx::Image image = m_ctx.createImage({width, height}, VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, "Image");
+    m_uploader.uploadImage(image, data, VkDeviceSize{width} * height * 4);
+
+    m_images.push_back(image);
     return static_cast<uint32_t>(m_images.size());
 }
-
 uint32_t ResourceStore::addSampler(const VkSamplerCreateInfo &info)
 {
     VkSampler sampler = VK_NULL_HANDLE;
@@ -143,13 +142,8 @@ void ResourceStore::createFallbackTexture()
 {
     // Magenta 1x1. Must be the first image, sampler and texture created, so
     // it always occupies descriptor slot 0.
-    const uint32_t purplePixelData = 0xFFFF00FF;   // RGBA bytes FF 00 FF FF
-
-    gfx::Buffer staging;
-    m_ctx.immediateSubmit([&](VkCommandBuffer cmd) {
-        m_fallbackImageId = addImage(cmd, reinterpret_cast<const unsigned char *>(&purplePixelData), 1, 1, staging);
-    });
-    m_ctx.destroyBuffer(staging);
+    const uint32_t purplePixelData = 0xFFFF00FF;
+    m_fallbackImageId = addImage(reinterpret_cast<const unsigned char *>(&purplePixelData), 1, 1);
 
     const VkSamplerCreateInfo samplerInfo
     {
@@ -295,7 +289,7 @@ void ResourceStore::uploadMaterialBuffer()
 
     gfx::Buffer matBuffer = m_ctx.createBuffer(matDataBytes,
         VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "materials");
-    m_ctx.upload(matBuffer, m_materials.data(), matDataBytes);
+    m_uploader.uploadBuffer(matBuffer, 0, m_materials.data(), matDataBytes);
     m_materialBufferId = addBuffer(matBuffer);
 }
 

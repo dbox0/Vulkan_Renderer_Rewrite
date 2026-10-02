@@ -3,6 +3,7 @@
 #include <format>
 
 #include "gfx/Context.h"
+#include "gfx/StagingUploader.h"
 
 void GeometryStore::reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes)
 {
@@ -92,8 +93,8 @@ bool GeometryStore::uploadToGpu()
     m_indexBuffer = m_ctx.createBuffer(indexBytes,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "indices");
 
-    m_ctx.upload(m_vertexBuffer, m_vertices.data(), vertexBytes);
-    m_ctx.upload(m_indexBuffer, m_indices.data(), indexBytes);
+    m_uploader.uploadBuffer(m_vertexBuffer, 0, m_vertices.data(), vertexBytes);
+    m_uploader.uploadBuffer(m_indexBuffer, 0, m_indices.data(), indexBytes);
 
     m_vertices.clear();
     m_vertices.shrink_to_fit();

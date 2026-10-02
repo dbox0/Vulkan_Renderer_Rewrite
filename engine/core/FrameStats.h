@@ -40,10 +40,15 @@ public:
         return m_count == 0 ? 0.0f : *std::max_element(m_samples.begin(), m_samples.begin() + static_cast<std::ptrdiff_t>(m_count));
     }
 
+    uint64_t uploadBytes = 0;
+    uint32_t uploadStalls = 0;
+    uint64_t uploadStallNs = 0;
+
 private:
     std::array<float, Capacity> m_samples{};
     size_t m_next  = 0;
     size_t m_count = 0;
+
 };
 
 }

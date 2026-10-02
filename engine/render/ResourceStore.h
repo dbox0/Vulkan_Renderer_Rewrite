@@ -5,7 +5,7 @@
 #include "Types.h"
 #include "gfx/Resources.h"
 
-namespace gfx { class Context; }
+namespace gfx { class Context; class StagingUploader; }
 
 // Owns every bindless GPU resource: images, samplers, textures, materials and
 // raw buffers, plus the global descriptor set the fragment shader samples
@@ -22,7 +22,7 @@ class ResourceStore
 public:
     static constexpr uint32_t MaxTextures = 1024;
 
-    explicit ResourceStore(gfx::Context &ctx) : m_ctx(ctx) {}
+    explicit ResourceStore(gfx::Context &ctx , gfx::StagingUploader &uploader) : m_ctx(ctx) , m_uploader(uploader) {}
     ResourceStore(const ResourceStore &) = delete;
     ResourceStore &operator=(const ResourceStore &) = delete;
 
@@ -32,8 +32,7 @@ public:
 
     // Records the upload into commandBuffer; the returned staging buffer must
     // be destroyed by the caller after submit. Pixels are RGBA8.
-    uint32_t addImage(VkCommandBuffer commandBuffer, const unsigned char *data,
-                      uint32_t width, uint32_t height, gfx::Buffer &outStagingBuffer);
+    uint32_t addImage(const unsigned char *data, uint32_t width, uint32_t height);
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
     uint32_t addMaterial(const Material &material);
@@ -64,6 +63,7 @@ private:
     void createFallbackTexture();
 
     gfx::Context &m_ctx;
+    gfx::StagingUploader &m_uploader;
 
     std::vector<gfx::Image>  m_images;
     std::vector<VkSampler>   m_samplers;

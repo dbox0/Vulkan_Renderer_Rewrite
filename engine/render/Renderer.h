@@ -13,6 +13,10 @@
 #include "scene/Scene.h"
 
 
+namespace gfx {
+    class StagingUploader;
+}
+
 class Camera;
 class GeometryStore;
 class ResourceStore;
@@ -26,8 +30,8 @@ public:
     static constexpr uint32_t FramesInFlight = 2;
     static constexpr VkFormat DepthFormat    = VK_FORMAT_D32_SFLOAT;
 
-    Renderer(gfx::Context &ctx, gfx::Swapchain &swapchain, ResourceStore &resources, GeometryStore &geometry)
-        : m_ctx(ctx), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry) {}
+    Renderer(gfx::Context &ctx, gfx::Swapchain &swapchain,gfx::StagingUploader &uploader ,ResourceStore &resources, GeometryStore &geometry)
+        : m_ctx(ctx), m_swapchain(swapchain),m_uploader(uploader), m_resources(resources), m_geometry(geometry) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -74,6 +78,8 @@ private:
     void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws);
 
     gfx::Context   &m_ctx;
+    gfx::StagingUploader &m_uploader;
+
     gfx::Swapchain &m_swapchain;
     ResourceStore  &m_resources;
     GeometryStore  &m_geometry;
