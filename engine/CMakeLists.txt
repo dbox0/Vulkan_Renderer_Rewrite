@@ -7,10 +7,10 @@ add_library(gfx STATIC
     gfx/Swapchain.cpp
     gfx/Pipeline.cpp
     gfx/Implementations.cpp
-        gfx/Queue.cpp
-        gfx/DeletionQueue.h
-        gfx/FrameArena.cpp
-        gfx/FrameArena.h)
+    gfx/Queue.cpp
+    gfx/DeletionQueue.h
+    gfx/FrameArena.cpp
+    gfx/FrameArena.h)
 target_link_libraries(gfx
     PUBLIC core Vulkan::Headers Vulkan::volk
     PRIVATE SDL3::SDL3 PkgConfig::SHADERC)

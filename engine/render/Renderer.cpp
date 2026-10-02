@@ -8,6 +8,7 @@
 #include "gfx/DebugLabel.h"
 #include "gfx/Pipeline.h"
 #include "scene/Camera.h"
+#include "gfx/FrameArena.h"
 
 namespace render
 {
@@ -27,11 +28,9 @@ static_assert(sizeof(PushConstants) <= PushConstantSize);
 
 }
 
-void Renderer::init(const std::filesystem::path &shaderDir, uint32_t maxDrawsPerFrame)
+void Renderer::init(const std::filesystem::path &shaderDir)
 {
-    m_maxDraws = maxDrawsPerFrame;
-    m_drawItems.reserve(maxDrawsPerFrame);
-
+    m_drawItems.reserve(1024);
     createFrames();
     createPipeline(shaderDir);
     resizeDepthIfNeeded();
@@ -46,47 +45,14 @@ void Renderer::shutdown()
     vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
 
     for (Frame &frame : m_frames) {
-        m_ctx.destroyBuffer(frame.indirectDraws);
-        m_ctx.destroyBuffer(frame.renderItems);
+        frame.arena.destroy(m_ctx);
         vkDestroySemaphore(device, frame.imageAcquired, nullptr);
         vkDestroyCommandPool(device, frame.commandPool, nullptr);
         frame = Frame{};
     }
 }
 
-void Renderer::createFrames()
-{
-    const VkDevice device = m_ctx.device();
-    const VkDeviceSize indirectBytes   = VkDeviceSize{m_maxDraws} * sizeof(VkDrawIndexedIndirectCommand);
-    const VkDeviceSize renderItemBytes = VkDeviceSize{m_maxDraws} * sizeof(RenderItem);
 
-    for (Frame &frame : m_frames) {
-        const VkCommandPoolCreateInfo poolInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-            .queueFamilyIndex = m_ctx.queueFamily()
-        };
-        VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &frame.commandPool));
-
-        const VkCommandBufferAllocateInfo allocInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-            .commandPool = frame.commandPool,
-            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-            .commandBufferCount = 1
-        };
-        VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &frame.commandBuffer));
-
-        const VkSemaphoreCreateInfo semaphoreInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-        VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.imageAcquired));
-        m_ctx.setName(VK_OBJECT_TYPE_SEMAPHORE, frame.imageAcquired, "image acquired");
-
-        frame.indirectDraws = m_ctx.createBuffer(indirectBytes, VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT, gfx::MemoryIntent::Upload, "indirect draws");
-        frame.renderItems = m_ctx.createBuffer(renderItemBytes,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, gfx::MemoryIntent::Upload, "render items");
-    }
-}
 
 void Renderer::createPipeline(const std::filesystem::path &shaderDir)
 {
@@ -127,6 +93,33 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     vkDestroyShaderModule(m_ctx.device(), fragment, nullptr);
 }
 
+void Renderer::createFrames() {
+    const VkDevice device = m_ctx.device();
+    for (Frame &frame : m_frames) {
+        const VkCommandPoolCreateInfo poolInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+            .queueFamilyIndex = m_ctx.queueFamily()
+        };
+        VK_CHECK(vkCreateCommandPool(device,&poolInfo,nullptr,&frame.commandPool));
+
+        const VkCommandBufferAllocateInfo allocInfo
+        {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = frame.commandPool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1
+        };
+        VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &frame.commandBuffer));
+
+        const VkSemaphoreCreateInfo semaphoreInfo{ .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+        VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &frame.imageAcquired));
+        m_ctx.setName(VK_OBJECT_TYPE_SEMAPHORE, frame.imageAcquired, "image acquired");
+
+        frame.arena.init(m_ctx, 16 * 1024 * 1024, "frame arena");
+    }
+}
 void Renderer::resizeDepthIfNeeded()
 {
     const VkExtent2D extent = m_swapchain.extent();
@@ -137,39 +130,42 @@ void Renderer::resizeDepthIfNeeded()
     m_depth = m_ctx.createImage(extent, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, "depth");
 }
 
-uint32_t Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &viewProj)
+Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &viewProj)
 {
-    auto *commands = static_cast<VkDrawIndexedIndirectCommand *>(frame.indirectDraws.mapped);
-    auto *items    = static_cast<RenderItem *>(frame.renderItems.mapped);
 
-    uint32_t drawCount = 0;
+   DrawList draws;
+    for (const DrawItem &item : m_drawItems) {
+        draws.count += static_cast<uint32_t>(m_geometry.mesh(item.meshId).subMeshes.size());
+    }
+    if (draws.count == 0) {
+        return draws;
+    }
+    draws.commands = frame.arena.allocate(draws.count * sizeof(VkDrawIndexedIndirectCommand));
+    draws.items    = frame.arena.allocate(draws.count * sizeof(RenderItem));
+    auto *commands = static_cast<VkDrawIndexedIndirectCommand *>(draws.commands.cpu);
+    auto *items    = static_cast<RenderItem *>(draws.items.cpu);
+
+    uint32_t i = 0;
     for (const DrawItem &item : m_drawItems) {
         for (const SubMesh &subMesh : m_geometry.mesh(item.meshId).subMeshes) {
-            if (drawCount == m_maxDraws) {
-                core::warn(std::format("Draw list exceeds the per-frame limit of {}; clamping", m_maxDraws));
-                return drawCount;
-            }
-
-            commands[drawCount] = VkDrawIndexedIndirectCommand
+            commands[i] = VkDrawIndexedIndirectCommand
             {
                 .indexCount = static_cast<uint32_t>(subMesh.indexCount),
                 .instanceCount = 1,
                 .firstIndex = static_cast<uint32_t>(subMesh.indexStart),
                 .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
-                .firstInstance = drawCount
+                .firstInstance = i
             };
-
-            // materialId is 1-based; 0 means "no material" and maps to the default material at index 0.
-            items[drawCount] = RenderItem
+            items[i] = RenderItem
             {
                 .wvp = viewProj * item.worldMatrix,
                 .worldMatrix = item.worldMatrix,
                 .materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0
             };
-            ++drawCount;
+            ++i;
         }
     }
-    return drawCount;
+    return draws;
 }
 
 void Renderer::render(Scene &scene, const Camera &camera)
@@ -184,7 +180,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
     m_ctx.queue().wait(frame.submitValue);
     m_ctx.collect();
-
+    frame.arena.reset();
     /*
     m_ctx.retire(m_ctx.createBuffer(1 << 20, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, gfx::Context::MemoryIntent::Upload, "retire test"));
     if (m_frameNumber % 60 == 0) {
@@ -202,16 +198,15 @@ void Renderer::render(Scene &scene, const Camera &camera)
     const VkExtent2D extent = m_swapchain.extent();
     const float aspectRatio = static_cast<float>(extent.width) / static_cast<float>(extent.height);
 
-    uint32_t drawCount = 0;
+    DrawList draws;
     if (m_geometry.uploaded()) {
         scene.collectDrawItems(m_drawItems);
-        drawCount = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
-        m_ctx.flush(frame.indirectDraws);
-        m_ctx.flush(frame.renderItems);
+        draws = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
     }
+    frame.arena.flush(m_ctx);
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
-    recordFrame(frame, imageIndex, drawCount);
+    recordFrame(frame, imageIndex, draws);
 
     const VkSemaphoreSubmitInfo waitInfo
     {
@@ -251,7 +246,7 @@ void Renderer::render(Scene &scene, const Camera &camera)
 
 }
 
-void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount)
+void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
 {
     const VkCommandBuffer cmd = frame.commandBuffer;
     const VkCommandBufferBeginInfo beginInfo
@@ -315,7 +310,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount
         const gfx::DebugLabel label(cmd, "Scene");
         vkCmdBeginRendering(cmd, &renderingInfo);
 
-        if (drawCount > 0) {
+        if (draws.count > 0) {
             // Negative height flips Y so +Y points up, matching glTF and glm.
             const VkViewport viewport
             {
@@ -337,13 +332,14 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount
             {
                 .vertexBufferAddress = m_geometry.vertexBufferAddress(),
                 .materialBufferAddress = m_resources.materialBufferAddress(),
-                .renderItemsAddress = frame.renderItems.address
+                .renderItemsAddress = draws.items.address
             };
             vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(push), &push);
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
             vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexedIndirect(cmd, frame.indirectDraws.buffer, 0, drawCount, sizeof(VkDrawIndexedIndirectCommand));
+            vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.count,
+                         sizeof(VkDrawIndexedIndirectCommand));
         }
 
         vkCmdEndRendering(cmd);

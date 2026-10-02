@@ -25,7 +25,7 @@ void Application::init()
 
     // Must come before the renderer: the pipeline layout needs the global descriptor set layout.
     m_resources.initialize();
-    m_renderer.init(std::filesystem::path(SDL_GetBasePath()) / "shaders", MaxDrawsPerFrame);
+    m_renderer.init(std::filesystem::path(SDL_GetBasePath()) / "shaders");
 
     m_scene.initialize(MaxNodes);
     m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes);

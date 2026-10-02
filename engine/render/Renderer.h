@@ -9,7 +9,9 @@
 
 #include "gfx/Context.h"
 #include "gfx/Swapchain.h"
+#include "gfx/FrameArena.h"
 #include "scene/Scene.h"
+
 
 class Camera;
 class GeometryStore;
@@ -29,7 +31,7 @@ public:
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    void init(const std::filesystem::path &shaderDir, uint32_t maxDrawsPerFrame);
+    void init(const std::filesystem::path &shaderDir);
     void shutdown();
 
     void render(Scene &scene, const Camera &camera);
@@ -52,9 +54,15 @@ private:
         VkCommandPool   commandPool   = VK_NULL_HANDLE;
         VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
         VkSemaphore     imageAcquired = VK_NULL_HANDLE;
-        gfx::Buffer     indirectDraws;
-        gfx::Buffer     renderItems;
+        gfx::FrameArena arena;
         uint64_t submitValue = 0;
+    };
+
+    struct DrawList
+    {
+        uint32_t             count = 0;
+        gfx::ArenaAllocation commands;
+        gfx::ArenaAllocation items;
     };
 
     void createFrames();
@@ -62,8 +70,8 @@ private:
     void resizeDepthIfNeeded();
 
     // Fills this frame's indirect + render-item buffers. Returns the draw count written.
-    uint32_t writeDrawCommands(Frame &frame, const glm::mat4 &viewProj);
-    void recordFrame(Frame &frame, uint32_t imageIndex, uint32_t drawCount);
+    DrawList writeDrawCommands(Frame &frame, const glm::mat4 &viewProj);
+    void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws);
 
     gfx::Context   &m_ctx;
     gfx::Swapchain &m_swapchain;
