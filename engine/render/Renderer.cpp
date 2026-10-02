@@ -5,7 +5,6 @@
 #include "GeometryStore.h"
 #include "ResourceStore.h"
 #include "gfx/Barriers.h"
-#include "gfx/DebugLabel.h"
 #include "gfx/Pipeline.h"
 #include "scene/Camera.h"
 #include "gfx/FrameArena.h"
@@ -33,6 +32,7 @@ void Renderer::init(const std::filesystem::path &shaderDir)
 {
     m_drawItems.reserve(1024);
     createFrames();
+    m_gpuProfiler.init(m_ctx, FramesInFlight, MaxGpuScopes);
     createPipeline(shaderDir);
     resizeDepthIfNeeded();
 }
@@ -41,6 +41,7 @@ void Renderer::shutdown()
 {
     const VkDevice device = m_ctx.device();
 
+    m_gpuProfiler.destroy(m_ctx);
     m_ctx.destroyImage(m_depth);
     vkDestroyPipeline(device, m_pipeline, nullptr);
     vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
@@ -256,6 +257,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
     };
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+    m_gpuProfiler.beginFrame(cmd, static_cast<uint32_t>(m_frameNumber % FramesInFlight));
 
     const VkExtent2D extent = m_swapchain.extent();
     const VkImage swapchainImage = m_swapchain.image(imageIndex);
@@ -308,7 +310,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
         .pDepthAttachment = &depthAttachment
     };
     {
-        const gfx::DebugLabel label(cmd, "Scene");
+        const gfx::GpuProfiler::Scope scope(m_gpuProfiler, cmd, "Scene");
         vkCmdBeginRendering(cmd, &renderingInfo);
 
         if (draws.count > 0) {
@@ -347,7 +349,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws)
     }
 
     if (m_overlay) {
-        const gfx::DebugLabel label(cmd, "Overlay");
+        const gfx::GpuProfiler::Scope scope(m_gpuProfiler, cmd, "Overlay");
         gfx::transition(cmd, {
             .image = swapchainImage,
             .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

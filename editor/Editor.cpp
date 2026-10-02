@@ -258,6 +258,11 @@ void Editor::drawScenePanel()
     ImGui::PlotLines("##frametimes", stats.data(), static_cast<int>(stats.count()), static_cast<int>(stats.oldest()),
                      nullptr, 0.0f, std::max(stats.maximum(), 1.0f) * 1.2f, ImVec2(-1.0f, 60.0f));
 
+    ImGui::SeparatorText("GPU");
+    for (const gfx::GpuProfiler::Result &result : m_app->renderer().gpuProfiler().results()) {
+        ImGui::Text("%s: %.3f ms", result.name, result.milliseconds);
+    }
+
     gfx::Swapchain &swapchain = m_app->swapchain();
     if (ImGui::BeginCombo("Present mode", gfx::presentModeName(swapchain.presentMode()))) {
         for (const VkPresentModeKHR mode : swapchain.supportedPresentModes()) {

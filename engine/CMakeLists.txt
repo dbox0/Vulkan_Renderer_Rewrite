@@ -12,7 +12,9 @@ add_library(gfx STATIC
     gfx/FrameArena.cpp
     gfx/FrameArena.h
         gfx/StagingUploader.cpp
-        gfx/StagingUploader.h)
+        gfx/StagingUploader.h
+        gfx/GpuProfiler.cpp
+        gfx/GpuProfiler.h)
 target_link_libraries(gfx
     PUBLIC core Vulkan::Headers Vulkan::volk
     PRIVATE SDL3::SDL3 PkgConfig::SHADERC)

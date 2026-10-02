@@ -10,6 +10,7 @@
 #include "gfx/Context.h"
 #include "gfx/Swapchain.h"
 #include "gfx/FrameArena.h"
+#include "gfx/GpuProfiler.h"
 #include "scene/Scene.h"
 
 
@@ -29,9 +30,10 @@ class Renderer
 public:
     static constexpr uint32_t FramesInFlight = 2;
     static constexpr VkFormat DepthFormat    = VK_FORMAT_D32_SFLOAT;
+    static constexpr uint32_t MaxGpuScopes   = 8;
 
     Renderer(gfx::Context &ctx, gfx::Swapchain &swapchain,gfx::StagingUploader &uploader ,ResourceStore &resources, GeometryStore &geometry)
-        : m_ctx(ctx), m_swapchain(swapchain),m_uploader(uploader), m_resources(resources), m_geometry(geometry) {}
+        : m_ctx(ctx), m_uploader(uploader), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry) {}
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
@@ -43,6 +45,8 @@ public:
     // Recorded after the scene, into the swapchain image with no depth attachment. Used by the editor.
     using Overlay = std::function<void(VkCommandBuffer)>;
     void setOverlay(Overlay overlay) { m_overlay = std::move(overlay); }
+
+    const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
 
 private:
     // Per-draw data the vertex shader pulls through renderItemsAddress.
@@ -90,6 +94,7 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline       m_pipeline       = VK_NULL_HANDLE;
     gfx::Image       m_depth;
+    gfx::GpuProfiler m_gpuProfiler;
 
     uint32_t              m_maxDraws = 0;
     std::vector<DrawItem> m_drawItems;   // reused across frames
