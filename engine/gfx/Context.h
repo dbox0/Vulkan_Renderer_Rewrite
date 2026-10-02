@@ -74,7 +74,6 @@ private:
     Queue                    m_queue;
     uint32_t                 m_queueFamily    = UINT32_MAX;
     VmaAllocator             m_allocator      = nullptr;
-    VkCommandPool            m_immediatePool  = VK_NULL_HANDLE;
     DeletionQueue            m_deletionQueue;
 };
 

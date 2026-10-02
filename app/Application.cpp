@@ -34,7 +34,6 @@ void Application::init()
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
-    VK_CHECK(vkDeviceWaitIdle(m_ctx.device()));
     m_scene.clear();
     m_geometry.reset();
     m_resources.clearModelData();

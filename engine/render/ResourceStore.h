@@ -28,10 +28,9 @@ public:
 
     void initialize();          // descriptor pool/layout/set + purple fallback
     void shutdown();
-    void clearModelData();      // keeps the fallbacks and default material; the GPU must be idle
+    void clearModelData();      // keeps the fallbacks and default material
 
-    // Records the upload into commandBuffer; the returned staging buffer must
-    // be destroyed by the caller after submit. Pixels are RGBA8.
+
     uint32_t addImage(const unsigned char *data, uint32_t width, uint32_t height, VkFormat format);
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
@@ -50,7 +49,7 @@ public:
     size_t materialCount() const { return m_materials.size(); }
     const std::vector<Material> &materials() const { return m_materials; }
 
-    void updateTextureDescriptors();       // writes all textures into binding 0
+    void updateTextureDescriptors();       // writes the textures added since the last call into binding 0
     VkDescriptorSet       globalDescriptorSet() const { return m_globalDescSet; }
     VkDescriptorSetLayout globalLayout()        const { return m_globalLayout; }
 
@@ -61,6 +60,7 @@ public:
 private:
     void createDescriptorSets();
     void createFallbackTexture();
+    void releaseTextureSlots(const std::vector<uint32_t> &ids);
 
     gfx::Context &m_ctx;
     gfx::StagingUploader &m_uploader;
@@ -70,6 +70,8 @@ private:
     std::vector<Texture>     m_textures;
     std::vector<Material>    m_materials;
     std::vector<gfx::Buffer> m_buffers;
+    std::vector<uint32_t>    m_freeTextureIds;
+    std::vector<uint32_t>    m_pendingTextureWrites;
 
     uint32_t m_fallbackImageId   = 0;
     uint32_t m_fallbackSamplerId = 0;

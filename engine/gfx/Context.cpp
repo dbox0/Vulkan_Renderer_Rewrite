@@ -56,21 +56,10 @@ namespace gfx {
         pickPhysicalDevice();
         createDevice();
         createAllocator();
-
-        const VkCommandPoolCreateInfo poolInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-            .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
-            .queueFamilyIndex = m_queueFamily
-        };
-        VK_CHECK(vkCreateCommandPool(m_device, &poolInfo, nullptr, &m_immediatePool));
     }
 
     void Context::shutdown() {
         m_deletionQueue.flush();
-        if (m_immediatePool) {
-            vkDestroyCommandPool(m_device, m_immediatePool, nullptr);
-        }
         if (m_allocator) {
             vmaDestroyAllocator(m_allocator);
         }

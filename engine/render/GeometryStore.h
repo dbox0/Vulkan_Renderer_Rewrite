@@ -21,7 +21,7 @@ public:
 
     void reserve(size_t vertexBudgetBytes, size_t indexBudgetBytes);
     void shutdown();
-    void reset();   // drops all meshes and GPU buffers; the GPU must be idle
+    void reset();   // drops all meshes. GPU buffers are retired
 
     size_t appendVertices(size_t count);
     size_t appendIndices(size_t count);
