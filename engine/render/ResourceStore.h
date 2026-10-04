@@ -20,7 +20,13 @@ namespace gfx { class Context; class StagingUploader; }
 class ResourceStore
 {
 public:
-    static constexpr uint32_t MaxTextures = 1024;
+    static constexpr uint32_t MaxTextures      = 1024;
+    static constexpr uint32_t MaxSamplers      = 32;
+    static constexpr uint32_t MaxStorageImages = 64;
+
+    static constexpr uint32_t TextureBinding      = 0;
+    static constexpr uint32_t SamplerBinding      = 1;
+    static constexpr uint32_t StorageImageBinding = 2;
 
     explicit ResourceStore(gfx::Context &ctx , gfx::StagingUploader &uploader) : m_ctx(ctx) , m_uploader(uploader) {}
     ResourceStore(const ResourceStore &) = delete;
@@ -44,6 +50,7 @@ public:
     // Converts a 1-based texture ID to the 0-based descriptor array slot the
     // shader uses. Returns the fallback slot for id 0 or out-of-range.
     uint32_t textureDescriptorSlot(uint32_t textureId) const;
+    uint32_t samplerDescriptorSlot(uint32_t textureId) const;
 
     const gfx::Buffer &buffer(uint32_t bufferId) const { return m_buffers[bufferId - 1]; }
     size_t materialCount() const { return m_materials.size(); }
@@ -67,6 +74,7 @@ private:
 
     std::vector<gfx::Image>  m_images;
     std::vector<VkSampler>   m_samplers;
+    std::vector<VkSamplerCreateInfo> m_samplerInfos;
     std::vector<Texture>     m_textures;
     std::vector<Material>    m_materials;
     std::vector<gfx::Buffer> m_buffers;

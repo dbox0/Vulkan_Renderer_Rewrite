@@ -37,6 +37,7 @@ layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outUV;
 layout (location = 3) out flat uint outTextureIndex;
 layout (location = 4) out flat vec4 outMaterialBaseColor;
+layout (location = 5) out flat uint outSamplerIndex;
 
 void main()
 {
@@ -52,4 +53,5 @@ void main()
     outUV = v.uv;
     outTextureIndex = material.textureIndex;
     outMaterialBaseColor = material.baseColor;
+    outSamplerIndex = material.samplerIndex;
 }

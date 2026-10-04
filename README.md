@@ -16,14 +16,13 @@ Needs SDL3, the Vulkan SDK (headers, loader, volk, validation layers), VMA, shad
 
 The editor opens models from File > Open (Ctrl+O) or by dropping a .gltf/.glb on the window.
 Configure with `-DBUILD_EDITOR=OFF` to build without it (and without fetching ImGui).
-Extended functionality will gradually be added back in.
+Extended editor functionality will gradually be added back in.
 
 Presets: `debug`, `debug-asan`, `release`. Debug builds enable validation and synchronization validation.
-Press V to cycle present modes; FIFO caps the frame rate at the display's refresh rate.
 
 ## Layout
 
-    engine/core     logging and fatal errors (no Vulkan)
+    engine/core     logging and fatal errors
     engine/gfx      context, swapchain, buffers, images, pipelines, barriers
     engine/scene    nodes, scene graph, camera (no Vulkan)
     engine/render   frame loop, geometry and resource stores
@@ -32,6 +31,6 @@ Press V to cycle present modes; FIFO caps the frame rate at the display's refres
     editor/         ImGui editor, attaches as an AppLayer (vulkaneditor)
     shaders/        GLSL, compiled at runtime from <bin>/shaders
     third_party/    tiny_gltf_v3, stb_image
-    assets/         models and textures (kept out of src)
+    assets/         models and textures
 
 Dependencies point down: core <- gfx <- render <- assets <- app <- editor, and core <- scene <- render.

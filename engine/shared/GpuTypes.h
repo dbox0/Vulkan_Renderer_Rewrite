@@ -25,6 +25,7 @@ struct Material
 {
     vec4 baseColor;
     uint textureIndex;
+    uint samplerIndex;
 };
 
 struct FrameData {
@@ -56,9 +57,10 @@ static_assert(offsetof(Vertex, color) == 12);
 static_assert(offsetof(Vertex, normal) == 24);
 static_assert(offsetof(Vertex, uv) == 36);
 
-static_assert(sizeof(Material) == 20);
+static_assert(sizeof(Material) == 24);
 static_assert(offsetof(Material, baseColor) == 0);
 static_assert(offsetof(Material, textureIndex) == 16);
+static_assert(offsetof(Material, samplerIndex) == 20);
 
 static_assert(sizeof(RenderItem) == 68);
 static_assert(offsetof(RenderItem, worldMatrix) == 0);

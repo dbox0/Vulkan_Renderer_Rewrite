@@ -7,16 +7,24 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) in flat uint inTextureIndex ;
 layout(location = 4) in flat vec4 inMaterialBaseColor;
+layout(location = 5) in flat uint inSamplerIndex;
+
 layout(location = 0) out vec4 fragColor;
 
-layout(set = 0, binding = 0) uniform sampler2D textures[];
+layout(set = 0, binding = 0) uniform texture2D textures[];
+layout(set = 0, binding = 1) uniform sampler samplers[];
+
+vec4 sampleTexture(uint t, uint s, vec2 uv)
+{
+    return texture(sampler2D(textures[nonuniformEXT(t)], samplers[nonuniformEXT(s)]), uv);
+}
 
 void main()
 {
     vec3 nNormal = normalize(inNormal);
     vec3 lightDirection = normalize(vec3(0, -1, -1));
     float d = max(dot(nNormal, -lightDirection), 0);
-    vec4 texColor = texture(textures[inTextureIndex], inUV);
+    vec4 texColor = sampleTexture(inTextureIndex, inSamplerIndex, inUV);
 
     // two-tone ambient light
     vec3 skyColor = vec3(0.15, 0.18, 0.25);

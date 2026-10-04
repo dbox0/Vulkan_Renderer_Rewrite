@@ -283,7 +283,8 @@ std::vector<uint32_t> GltfLoader::loadMaterials(const tg3_model &model,
 
             // Material::textureIndex is the 0-based descriptor slot the
             // shader samples. ResourceStore owns that conversion.
-            .textureIndex = m_resources.textureDescriptorSlot(textureId)
+            .textureIndex = m_resources.textureDescriptorSlot(textureId),
+            .samplerIndex = m_resources.samplerDescriptorSlot(textureId)
         });
     }
     return materialIds;

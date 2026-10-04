@@ -3,14 +3,43 @@
 #include "gfx/StagingUploader.h"
 #include <array>
 
+namespace
+{
+
+    bool sameSampler(const VkSamplerCreateInfo &a, const VkSamplerCreateInfo &b)
+    {
+        return a.flags == b.flags &&
+               a.magFilter == b.magFilter &&
+               a.minFilter == b.minFilter &&
+               a.mipmapMode == b.mipmapMode &&
+               a.addressModeU == b.addressModeU &&
+               a.addressModeV == b.addressModeV &&
+               a.addressModeW == b.addressModeW &&
+               a.mipLodBias == b.mipLodBias &&
+               a.anisotropyEnable == b.anisotropyEnable &&
+               a.maxAnisotropy == b.maxAnisotropy &&
+               a.compareEnable == b.compareEnable &&
+               a.compareOp == b.compareOp &&
+               a.minLod == b.minLod &&
+               a.maxLod == b.maxLod &&
+               a.borderColor == b.borderColor &&
+               a.unnormalizedCoordinates == b.unnormalizedCoordinates;
+    }
+
+}
+
 void ResourceStore::initialize()
 {
     createDescriptorSets();
     createFallbackTexture();
 
-    // Material index 0 is the default, used by primitives with no material.
-    // Without it a model with no materials would read through a null material pointer.
-    addMaterial(Material{ .baseColor = glm::vec4(1.0f), .textureIndex = textureDescriptorSlot(m_fallbackTextureId) });
+    addMaterial(Material
+    {
+        .baseColor = glm::vec4(1.0f),
+        .textureIndex = textureDescriptorSlot(m_fallbackTextureId),
+        .samplerIndex = samplerDescriptorSlot(m_fallbackTextureId)
+    });
+
 }
 
 void ResourceStore::shutdown()
@@ -40,6 +69,7 @@ void ResourceStore::shutdown()
         {vkDestroySampler(device,sampler,nullptr);});
     }
     m_samplers.clear();
+    m_samplerInfos.clear();
 
     for (gfx::Buffer &buff : m_buffers) {
         m_ctx.retire(buff);
@@ -55,20 +85,10 @@ void ResourceStore::shutdown()
 
 void ResourceStore::clearModelData()
 {
-    // The fallback image, sampler and texture are always first
-    // default material too.
     for (size_t i = m_fallbackImageId; i < m_images.size(); ++i) {
         m_ctx.retire(m_images[i]);
     }
     m_images.resize(m_fallbackImageId);
-
-    for (size_t i = m_fallbackSamplerId; i < m_samplers.size(); ++i) {
-        m_ctx.retire([device = m_ctx.device(),sampler = m_samplers[i]]{
-            vkDestroySampler(device, sampler, nullptr);
-        });
-
-    }
-    m_samplers.resize(m_fallbackSamplerId);
 
     for (gfx::Buffer &buff : m_buffers) {
         m_ctx.retire(buff);
@@ -97,7 +117,6 @@ void ResourceStore::releaseTextureSlots(const std::vector<uint32_t> &ids)
     if (m_globalDescSet) {
         const VkDescriptorImageInfo fallback
         {
-            .sampler = m_samplers[m_fallbackSamplerId - 1],
             .imageView = m_images[m_fallbackImageId - 1].view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
@@ -108,10 +127,10 @@ void ResourceStore::releaseTextureSlots(const std::vector<uint32_t> &ids)
             {
                 .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
                 .dstSet = m_globalDescSet,
-                .dstBinding = 0,
+                .dstBinding = TextureBinding,
                 .dstArrayElement = id - 1,
                 .descriptorCount = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
                 .pImageInfo = &fallback
             });
         }
@@ -132,12 +151,40 @@ uint32_t ResourceStore::addImage(const unsigned char *data, uint32_t width, uint
 }
 uint32_t ResourceStore::addSampler(const VkSamplerCreateInfo &info)
 {
+    for (size_t i = 0; i < m_samplerInfos.size(); ++i) {
+        if (sameSampler(m_samplerInfos[i], info)) {
+            return static_cast<uint32_t>(i + 1);
+        }
+    }
+
+    if (m_samplers.size() >= MaxSamplers) {
+        core::warn("Exceeded the maximum sampler count");
+        return m_fallbackSamplerId;
+    }
+
     VkSampler sampler = VK_NULL_HANDLE;
     VK_CHECK(vkCreateSampler(m_ctx.device(), &info, nullptr, &sampler));
     m_samplers.push_back(sampler);
-    return static_cast<uint32_t>(m_samplers.size());
-}
+    m_samplerInfos.push_back(info);
+    m_samplerInfos.back().pNext = nullptr;
 
+    const uint32_t id = static_cast<uint32_t>(m_samplers.size());
+
+    const VkDescriptorImageInfo samplerInfo{ .sampler = sampler };
+    const VkWriteDescriptorSet write
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = SamplerBinding,
+        .dstArrayElement = id - 1,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+        .pImageInfo = &samplerInfo
+    };
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+
+    return id;
+}
 uint32_t ResourceStore::addTexture(uint32_t imageId, uint32_t samplerId)
 {
     uint32_t id = 0;
@@ -186,7 +233,18 @@ uint32_t ResourceStore::textureDescriptorSlot(uint32_t textureId) const
     return textureId - 1;
 }
 
-// fallback texture
+uint32_t ResourceStore::samplerDescriptorSlot(uint32_t textureId) const
+{
+    const uint32_t fallbackSlot = m_fallbackSamplerId ? m_fallbackSamplerId - 1 : 0;
+    if (textureId == 0 || textureId > m_textures.size()) {
+        return fallbackSlot;
+    }
+    const uint32_t samplerId = m_textures[textureId - 1].samplerId;
+    if (samplerId == 0 || samplerId > m_samplers.size()) {
+        return fallbackSlot;
+    }
+    return samplerId - 1;
+}
 
 void ResourceStore::createFallbackTexture()
 {
@@ -210,23 +268,19 @@ void ResourceStore::createFallbackTexture()
     m_fallbackTextureId = addTexture(m_fallbackImageId, m_fallbackSamplerId);
 }
 
-// bindless descriptors
 
 void ResourceStore::createDescriptorSets()
 {
-    const std::array<VkDescriptorPoolSize, 1> poolSizes
+    const std::array<VkDescriptorPoolSize, 3> poolSizes
     {
-        VkDescriptorPoolSize
-        {
-            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = MaxTextures
-        }
+        VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, .descriptorCount = MaxTextures },
+        VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_SAMPLER,       .descriptorCount = MaxSamplers },
+        VkDescriptorPoolSize{ .type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, .descriptorCount = MaxStorageImages }
     };
 
     const VkDescriptorPoolCreateInfo poolInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-        // Lets us rewrite descriptors after they have been bound.
         .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
         .maxSets = 1,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
@@ -234,21 +288,34 @@ void ResourceStore::createDescriptorSets()
     };
     VK_CHECK(vkCreateDescriptorPool(m_ctx.device(), &poolInfo, nullptr, &m_descriptorPool));
 
-    const std::array<VkDescriptorSetLayoutBinding, 1> bindings
+    const std::array<VkDescriptorSetLayoutBinding, 3> bindings
     {
         VkDescriptorSetLayoutBinding
         {
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .binding = TextureBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
             .descriptorCount = MaxTextures,
-            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+            .stageFlags = VK_SHADER_STAGE_ALL
+        },
+        VkDescriptorSetLayoutBinding
+        {
+            .binding = SamplerBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .descriptorCount = MaxSamplers,
+            .stageFlags = VK_SHADER_STAGE_ALL
+        },
+        VkDescriptorSetLayoutBinding
+        {
+            .binding = StorageImageBinding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+            .descriptorCount = MaxStorageImages,
+            .stageFlags = VK_SHADER_STAGE_ALL
         }
     };
 
-    const std::array<VkDescriptorBindingFlags, 1> flags
-    {
-        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT
-    };
+    constexpr VkDescriptorBindingFlags bindingFlags =
+        VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    const std::array<VkDescriptorBindingFlags, 3> flags{ bindingFlags, bindingFlags, bindingFlags };
 
     const VkDescriptorSetLayoutBindingFlagsCreateInfo flagsInfo
     {
@@ -283,45 +350,36 @@ void ResourceStore::updateTextureDescriptors()
         return;
     }
 
-    std::vector<VkDescriptorImageInfo> imageDescriptors;
-    imageDescriptors.reserve(m_pendingTextureWrites.size());
+    std::vector<VkDescriptorImageInfo> imageInfos;
+    imageInfos.reserve(m_pendingTextureWrites.size());
     std::vector<VkWriteDescriptorSet> writes;
     writes.reserve(m_pendingTextureWrites.size());
 
     for (const uint32_t id : m_pendingTextureWrites) {
         const Texture &t = m_textures[id - 1];
 
-
-
-        const bool imageOk   = t.imageId   > 0 && t.imageId   <= m_images.size();
-        const bool samplerOk = t.samplerId > 0 && t.samplerId <= m_samplers.size();
-
-        if (!imageOk || !samplerOk) {
-            core::warn("Texture references an invalid image or sampler; using the fallback");
+        const bool imageOk = t.imageId > 0 && t.imageId <= m_images.size();
+        if (!imageOk) {
+            core::warn("Texture references an invalid image; using the fallback");
         }
-
         const gfx::Image &image = imageOk
             ? m_images[t.imageId - 1]
             : m_images[m_fallbackImageId - 1];
-        const VkSampler sampler = samplerOk
-            ? m_samplers[t.samplerId - 1]
-            : m_samplers[m_fallbackSamplerId - 1];
 
-        imageDescriptors.push_back(
-            {
-                .sampler = sampler,
-                .imageView = image.view,
-                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-            });
+        imageInfos.push_back(VkDescriptorImageInfo
+        {
+            .imageView = image.view,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        });
         writes.push_back(VkWriteDescriptorSet
         {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = m_globalDescSet,
-            .dstBinding = 0,
+            .dstBinding = TextureBinding,
             .dstArrayElement = id - 1,
             .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImageInfo = &imageDescriptors.back()
+            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+            .pImageInfo = &imageInfos.back()
         });
     }
 

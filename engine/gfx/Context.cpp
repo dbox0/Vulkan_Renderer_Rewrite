@@ -204,7 +204,8 @@ namespace gfx {
             !supported12.shaderSampledImageArrayNonUniformIndexing ||
             !supported11.shaderDrawParameters ||
             !supported.features.multiDrawIndirect || !supported.features.shaderInt64 ||
-            !supported.features.drawIndirectFirstInstance){
+            !supported.features.drawIndirectFirstInstance  ||
+            !supported12.descriptorBindingStorageImageUpdateAfterBind){
             core::fatal("The GPU is missing a required Vulkan 1.3 feature");
         }
 
@@ -222,11 +223,13 @@ namespace gfx {
             .descriptorIndexing = VK_TRUE,
             .shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
             .descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+            .descriptorBindingStorageImageUpdateAfterBind = VK_TRUE,
             .descriptorBindingPartiallyBound = VK_TRUE,
             .runtimeDescriptorArray = VK_TRUE,
             .scalarBlockLayout = VK_TRUE,
             .timelineSemaphore = VK_TRUE,
-            .bufferDeviceAddress = VK_TRUE
+            .bufferDeviceAddress = VK_TRUE,
+
         };
         VkPhysicalDeviceVulkan11Features features11
         {
