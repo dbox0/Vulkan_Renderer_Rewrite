@@ -72,6 +72,7 @@ void Editor::attach(Application &app)
     initInfo.QueueFamily = ctx.queueFamily();
     initInfo.Queue = ctx.queue().handle();
     initInfo.DescriptorPool = m_pool;
+    initInfo.PipelineCache = ctx.pipelineCache();
     initInfo.MinImageCount = 2;
     initInfo.ImageCount = std::max(2u, app.swapchain().imageCount());
     initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;

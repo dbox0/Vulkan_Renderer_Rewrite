@@ -113,7 +113,7 @@ VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc
     };
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateGraphicsPipelines(ctx.device(), VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline));
+    VK_CHECK(vkCreateGraphicsPipelines(ctx.device(), ctx.pipelineCache(), 1, &createInfo, nullptr, &pipeline));
     ctx.setName(VK_OBJECT_TYPE_PIPELINE, pipeline, name);
     return pipeline;
 }

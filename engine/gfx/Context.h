@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 
 #include "Queue.h"
@@ -21,7 +22,9 @@ public:
     Context(const Context &) = delete;
     Context &operator=(const Context &) = delete;
 
-    void init(SDL_Window *window);
+    // cacheDir holds pipelines.bin
+    // empty disables the pipeline cache file.
+    void init(SDL_Window *window, std::filesystem::path cacheDir);
     void shutdown();
 
     VkInstance       instance() const       { return m_instance; }
@@ -32,6 +35,7 @@ public:
     Queue           &queue()                { return m_queue; }
     uint32_t         queueFamily() const    { return m_queueFamily; }
     VmaAllocator     allocator() const      { return m_allocator; }
+    VkPipelineCache  pipelineCache() const  { return m_pipelineCache; }
 
     Buffer createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, MemoryIntent intent, const char *name) const;
     void   invalidate(const Buffer &buffer) const;
@@ -64,6 +68,8 @@ private:
     void pickPhysicalDevice();
     void createDevice();
     void createAllocator();
+    void createPipelineCache();
+    void savePipelineCache() const;
     void setObjectName(VkObjectType type, uint64_t handle, const char *name) const;
 
     VkInstance               m_instance       = VK_NULL_HANDLE;
@@ -75,6 +81,10 @@ private:
     uint32_t                 m_queueFamily    = UINT32_MAX;
     VmaAllocator             m_allocator      = nullptr;
     DeletionQueue            m_deletionQueue;
+
+    std::filesystem::path      m_cacheDir;
+    VkPipelineCache            m_pipelineCache = VK_NULL_HANDLE;
+    VkPhysicalDeviceProperties m_properties{};
 };
 
 }

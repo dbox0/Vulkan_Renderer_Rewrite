@@ -8,10 +8,10 @@
 #include <fstream>
 #include <memory>
 #include <optional>
-#include <random>
 #include <sstream>
 
 #include "Context.h"
+#include "core/File.h"
 #include "core/Hash.h"
 
 namespace gfx
@@ -87,7 +87,7 @@ uint64_t cacheKey(shaderc_shader_kind kind, std::string_view preprocessed)
 
 std::optional<std::vector<uint32_t>> loadCached(const std::filesystem::path &path)
 {
-    const std::optional<std::string> bytes = readText(path);
+    const std::optional<std::vector<std::byte>> bytes = core::readFile(path);
     if (!bytes || bytes->empty() || bytes->size() % sizeof(uint32_t) != 0) {
         return std::nullopt;
     }
@@ -254,7 +254,7 @@ ShaderBinary ShaderCompiler::compile(const std::filesystem::path &path) const
     }
     binary.spirv.assign(result.cbegin(), result.cend());
 
-    if (!cachePath.empty() && !writeCached(cachePath, binary.spirv) && !m_warnedCacheWrite) {
+    if (!cachePath.empty() && !core::writeFileAtomic(cachePath, std::as_bytes(std::span(binary.spirv))) && !m_warnedCacheWrite) {
         core::warn(std::format("Cannot write SPIR-V cache file {}", cachePath.string()));
         m_warnedCacheWrite = true;
     }

@@ -5,8 +5,12 @@
 #include "Barriers.h"
 #include "DebugLabel.h"
 
+#include <cstring>
 #include <iterator>
+#include <span>
 #include <vector>
+
+#include "core/File.h"
 
 namespace gfx {
 #ifndef NDEBUG
@@ -38,13 +42,33 @@ namespace gfx {
             };
         }
 
+        // Returns why file can't seed this device's cache, or nullptr if it can.
+        const char *pipelineCacheProblem(std::span<const std::byte> data, const VkPhysicalDeviceProperties &props) {
+            VkPipelineCacheHeaderVersionOne header{};
+            if (data.size() < sizeof(header)) {
+                return "too small";
+            }
+            std::memcpy(&header, data.data(), sizeof(header));
+            if (header.headerVersion != VK_PIPELINE_CACHE_HEADER_VERSION_ONE || header.headerSize < sizeof(header)) {
+                return "unknown header";
+            }
+            if (header.vendorID != props.vendorID || header.deviceID != props.deviceID) {
+                return "written by another GPU";
+            }
+            if (std::memcmp(header.pipelineCacheUUID, props.pipelineCacheUUID, VK_UUID_SIZE) != 0) {
+                return "written by another driver version";
+            }
+            return nullptr;
+        }
+
         bool isDepthFormat(VkFormat format) {
             return format == VK_FORMAT_D16_UNORM || format == VK_FORMAT_D32_SFLOAT ||
                    format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
         }
     }
 
-    void Context::init(SDL_Window *window) {
+    void Context::init(SDL_Window *window, std::filesystem::path cacheDir) {
+        m_cacheDir = std::move(cacheDir);
         VK_CHECK(volkInitialize());
         createInstance();
         createDebugMessenger();
@@ -56,10 +80,16 @@ namespace gfx {
         pickPhysicalDevice();
         createDevice();
         createAllocator();
+        createPipelineCache();
     }
 
     void Context::shutdown() {
         m_deletionQueue.flush();
+        if (m_pipelineCache) {
+            savePipelineCache();
+            vkDestroyPipelineCache(m_device, m_pipelineCache, nullptr);
+            m_pipelineCache = VK_NULL_HANDLE;
+        }
         if (m_allocator) {
             vmaDestroyAllocator(m_allocator);
         }
@@ -159,9 +189,8 @@ namespace gfx {
             }
         }
 
-        VkPhysicalDeviceProperties props{};
-        vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
-        core::log(std::format("GPU: {}", props.deviceName));
+        vkGetPhysicalDeviceProperties(m_physicalDevice, &m_properties);
+        core::log(std::format("GPU: {}", m_properties.deviceName));
 
         uint32_t familyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &familyCount, nullptr);
@@ -288,6 +317,54 @@ namespace gfx {
         };
         VK_CHECK(vmaImportVulkanFunctionsFromVolk(&createInfo, &functions));
         VK_CHECK(vmaCreateAllocator(&createInfo, &m_allocator));
+    }
+
+    void Context::createPipelineCache() {
+        std::vector<std::byte> initialData;
+        if (!m_cacheDir.empty()) {
+            const std::filesystem::path path = m_cacheDir / "pipelines.bin";
+            if (std::optional<std::vector<std::byte>> data = core::readFile(path)) {
+                if (const char *problem = pipelineCacheProblem(*data, m_properties)) {
+                    core::log(std::format("Pipeline cache: ignoring {} ({})", path.string(), problem));
+                } else {
+                    initialData = std::move(*data);
+                    core::log(std::format("Pipeline cache: loaded {} bytes", initialData.size()));
+                }
+            }
+        }
+
+        const VkPipelineCacheCreateInfo info
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+            .initialDataSize = initialData.size(),
+            .pInitialData = initialData.empty() ? nullptr : initialData.data()
+        };
+        VK_CHECK(vkCreatePipelineCache(m_device, &info, nullptr, &m_pipelineCache));
+        setName(VK_OBJECT_TYPE_PIPELINE_CACHE, m_pipelineCache, "pipeline cache");
+    }
+
+    void Context::savePipelineCache() const {
+        if (m_cacheDir.empty()) {
+            return;
+        }
+        size_t size = 0;
+        if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, nullptr) != VK_SUCCESS) {
+            core::warn("Pipeline cache: cannot query its size; not saved");
+            return;
+        }
+        std::vector<std::byte> data(size);
+        if (vkGetPipelineCacheData(m_device, m_pipelineCache, &size, data.data()) != VK_SUCCESS) {
+            core::warn("Pipeline cache: its size changed while reading; not saved");
+            return;
+        }
+        data.resize(size);
+
+        const std::filesystem::path path = m_cacheDir / "pipelines.bin";
+        if (core::writeFileAtomic(path, data)) {
+            core::log(std::format("Pipeline cache: saved {} bytes", data.size()));
+        } else {
+            core::warn(std::format("Pipeline cache: cannot write {}", path.string()));
+        }
     }
 
     void Context::setObjectName(VkObjectType type, uint64_t handle, const char *name) const {

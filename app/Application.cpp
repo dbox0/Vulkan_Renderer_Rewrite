@@ -23,7 +23,7 @@ void Application::init()
     const std::filesystem::path base = SDL_GetBasePath();
     const std::filesystem::path cacheDir = base / "cache";
 
-    m_ctx.init(m_window);
+    m_ctx.init(m_window, cacheDir);
     m_uploader.init(m_ctx,64ull << 20);
     m_swapchain.create(m_window);
 
