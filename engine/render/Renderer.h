@@ -11,6 +11,7 @@
 #include "gfx/Swapchain.h"
 #include "gfx/FrameArena.h"
 #include "gfx/GpuProfiler.h"
+#include "gfx/ShaderCompiler.h"
 #include "scene/Scene.h"
 
 
@@ -68,6 +69,7 @@ private:
 
     void createFrames();
     void createPipeline(const std::filesystem::path &shaderDir);
+    VkShaderModule createShaderModule(const std::filesystem::path &path);
     void resizeDepthIfNeeded();
 
     // Fills this frame's indirect + render-item buffers. Returns the draw count written.
@@ -84,6 +86,7 @@ private:
     std::array<Frame, FramesInFlight> m_frames{};
     uint64_t    m_frameNumber   = 0;   // frames submitted so far; frame n signals n + 1
 
+    gfx::ShaderCompiler m_shaderCompiler;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline       m_pipeline       = VK_NULL_HANDLE;
     gfx::Image       m_depth;

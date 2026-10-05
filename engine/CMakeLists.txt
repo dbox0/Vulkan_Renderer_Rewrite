@@ -6,6 +6,7 @@ add_library(gfx STATIC
     gfx/Context.cpp
     gfx/Swapchain.cpp
     gfx/Pipeline.cpp
+    gfx/ShaderCompiler.cpp
     gfx/Implementations.cpp
     gfx/Queue.cpp
     gfx/DeletionQueue.h
@@ -14,7 +15,9 @@ add_library(gfx STATIC
         gfx/StagingUploader.cpp
         gfx/StagingUploader.h
         gfx/GpuProfiler.cpp
-        gfx/GpuProfiler.h)
+        gfx/GpuProfiler.h
+        gfx/ShaderCompiler.cpp
+        gfx/ShaderCompiler.h)
 target_link_libraries(gfx
     PUBLIC core Vulkan::Headers Vulkan::volk
     PRIVATE SDL3::SDL3 PkgConfig::SHADERC)

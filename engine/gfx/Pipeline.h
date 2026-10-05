@@ -1,5 +1,4 @@
 #pragma once
-#include <filesystem>
 #include <vector>
 
 #include "Vk.h"
@@ -8,9 +7,6 @@ namespace gfx
 {
 
 class Context;
-
-// Compiles GLSL to SPIR-V at runtime. The stage comes from the extension (.vert, .frag, .comp).
-VkShaderModule loadShader(const Context &ctx, const std::filesystem::path &path);
 
 struct GraphicsPipelineDesc
 {
@@ -26,7 +22,7 @@ struct GraphicsPipelineDesc
 
     bool        depthTest    = false;
     bool        depthWrite   = false;
-    VkCompareOp depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL;   // reverse-Z
+    VkCompareOp depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL;
 };
 
 VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name);

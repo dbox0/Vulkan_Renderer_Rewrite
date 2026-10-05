@@ -1,121 +1,11 @@
 #include "Pipeline.h"
 
-#include <shaderc/shaderc.hpp>
-
 #include <array>
-#include <fstream>
-#include <memory>
-#include <sstream>
 
 #include "Context.h"
 
 namespace gfx
 {
-
-namespace
-{
-
-class FileIncluder final : public shaderc::CompileOptions::IncluderInterface
-{
-public:
-    explicit FileIncluder(std::filesystem::path root) : m_root(std::move(root)) {}
-
-    shaderc_include_result *GetInclude(const char *requested, shaderc_include_type type,
-                                       const char *requesting, size_t) override
-    {
-        auto *entry = new Entry;
-
-        std::filesystem::path path = std::filesystem::path(requesting).parent_path() / requested;
-        if (type == shaderc_include_type_standard || !std::filesystem::exists(path)) {
-            path = m_root / requested;
-        }
-
-        std::ifstream file(path);
-        if (file) {
-            std::stringstream text;
-            text << file.rdbuf();
-            entry->name = path.string();
-            entry->content = text.str();
-        } else {
-            entry->content = std::format("Cannot open include {}", requested);
-        }
-
-        entry->result = shaderc_include_result
-        {
-            .source_name = entry->name.data(),
-            .source_name_length = entry->name.size(),
-            .content = entry->content.data(),
-            .content_length = entry->content.size(),
-            .user_data = entry
-        };
-        return &entry->result;
-    }
-
-    void ReleaseInclude(shaderc_include_result *result) override
-    {
-        delete static_cast<Entry *>(result->user_data);
-    }
-
-private:
-    struct Entry
-    {
-        std::string name;
-        std::string content;
-        shaderc_include_result result{};
-    };
-
-    std::filesystem::path m_root;
-};
-
-}
-
-VkShaderModule loadShader(const Context &ctx, const std::filesystem::path &path)
-{
-    std::ifstream file(path);
-    if (!file) {
-        core::fatal(std::format("Cannot open shader {}", path.string()));
-    }
-    std::stringstream source;
-    source << file.rdbuf();
-
-    const std::string extension = path.extension().string();
-    shaderc_shader_kind kind = shaderc_glsl_vertex_shader;
-    if (extension == ".frag") {
-        kind = shaderc_glsl_fragment_shader;
-    } else if (extension == ".comp") {
-        kind = shaderc_glsl_compute_shader;
-    } else if (extension != ".vert") {
-        core::fatal(std::format("Unknown shader stage for {}", path.string()));
-    }
-
-    shaderc::CompileOptions options;
-    options.SetIncluder(std::make_unique<FileIncluder>(path.parent_path()));
-    options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_3);
-    options.SetTargetSpirv(shaderc_spirv_version_1_6);
-#ifndef NDEBUG
-    options.SetGenerateDebugInfo();   // lets RenderDoc show the GLSL source
-#else
-    options.SetOptimizationLevel(shaderc_optimization_level_performance);
-#endif
-
-    shaderc::Compiler compiler;
-    const shaderc::SpvCompilationResult result =
-        compiler.CompileGlslToSpv(source.str(), kind, path.string().c_str(), options);
-    if (result.GetCompilationStatus() != shaderc_compilation_status_success) {
-        core::fatal(std::format("Shader compilation failed:\n{}", result.GetErrorMessage()));
-    }
-
-    const std::vector<uint32_t> spirv(result.cbegin(), result.cend());
-    const VkShaderModuleCreateInfo createInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = spirv.size() * sizeof(uint32_t),
-        .pCode = spirv.data()
-    };
-    VkShaderModule module = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateShaderModule(ctx.device(), &createInfo, nullptr, &module));
-    return module;
-}
 
 VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name)
 {
@@ -136,8 +26,6 @@ VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc
             .pName = "main"
         }
     };
-
-    // Vertices are pulled from buffers in the shader, so there is no vertex input state.
     const VkPipelineVertexInputStateCreateInfo vertexInput{ .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 
     const VkPipelineInputAssemblyStateCreateInfo inputAssembly

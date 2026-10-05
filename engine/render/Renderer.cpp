@@ -68,8 +68,9 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     };
     VK_CHECK(vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_pipelineLayout));
 
-    const VkShaderModule vertex = gfx::loadShader(m_ctx, shaderDir / "shader.vert");
-    const VkShaderModule fragment = gfx::loadShader(m_ctx, shaderDir / "shader.frag");
+    m_shaderCompiler.init({ shaderDir });
+    const VkShaderModule vertex = createShaderModule(shaderDir / "shader.vert");
+    const VkShaderModule fragment = createShaderModule(shaderDir / "shader.frag");
 
     m_pipeline = gfx::createGraphicsPipeline(m_ctx, {
         .vertex = vertex,
@@ -86,6 +87,23 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
 
     vkDestroyShaderModule(m_ctx.device(), vertex, nullptr);
     vkDestroyShaderModule(m_ctx.device(), fragment, nullptr);
+}
+
+VkShaderModule Renderer::createShaderModule(const std::filesystem::path &path)
+{
+    const gfx::ShaderBinary binary = m_shaderCompiler.compile(path);
+    if (!binary.ok()) {
+        core::fatal(std::format("Shader compilation failed:\n{}", binary.error));
+    }
+
+    std::string includes;
+    for (const std::filesystem::path &include : binary.includes) {
+        includes += std::format(" {}", include.string());
+    }
+    core::log(std::format("Shader {}, includes:{}", path.filename().string(), includes.empty() ? " none" : includes));
+
+    const std::string name = path.filename().string();
+    return gfx::createShaderModule(m_ctx, binary.spirv, name.c_str());
 }
 
 void Renderer::createFrames() {
@@ -386,7 +404,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
         .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         .srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
         .srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT   // must overlap the render-finished signal stage
+        .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
     });
 
     VK_CHECK(vkEndCommandBuffer(cmd));
