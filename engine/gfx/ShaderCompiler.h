@@ -25,11 +25,13 @@ struct ShaderBinary
 class ShaderCompiler
 {
 public:
-    void init(std::vector<std::filesystem::path> includeRoots);
+    void init(std::vector<std::filesystem::path> includeRoots, std::filesystem::path cacheDir);
     ShaderBinary compile(const std::filesystem::path &path) const;
 
 private:
     std::vector<std::filesystem::path> m_includeRoots;
+    std::filesystem::path              m_cacheDir;
+    mutable bool                       m_warnedCacheWrite = false;
 };
 
 VkShaderModule createShaderModule(const Context &ctx, std::span<const uint32_t> spirv, const char *name);

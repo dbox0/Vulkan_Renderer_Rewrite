@@ -20,13 +20,15 @@ void Application::init()
         core::fatal(std::format("SDL_CreateWindow failed: {}", SDL_GetError()));
     }
 
+    const std::filesystem::path base = SDL_GetBasePath();
+    const std::filesystem::path cacheDir = base / "cache";
+
     m_ctx.init(m_window);
     m_uploader.init(m_ctx,64ull << 20);
     m_swapchain.create(m_window);
 
-    // Must come before the renderer: the pipeline layout needs the global descriptor set layout.
     m_resources.initialize();
-    m_renderer.init(std::filesystem::path(SDL_GetBasePath()) / "shaders");
+    m_renderer.init(base / "shaders", cacheDir);
 
     m_scene.initialize(MaxNodes);
     m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes);

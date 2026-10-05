@@ -21,8 +21,9 @@ static_assert(sizeof(PushConstants) <= PushConstantSize);
 
 }
 
-void Renderer::init(const std::filesystem::path &shaderDir)
+void Renderer::init(const std::filesystem::path &shaderDir, const std::filesystem::path &cacheDir)
 {
+    m_shaderCompiler.init({ shaderDir }, cacheDir);
     m_drawItems.reserve(1024);
     createFrames();
     m_gpuProfiler.init(m_ctx, FramesInFlight, MaxGpuScopes);
@@ -68,7 +69,6 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     };
     VK_CHECK(vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_pipelineLayout));
 
-    m_shaderCompiler.init({ shaderDir });
     const VkShaderModule vertex = createShaderModule(shaderDir / "shader.vert");
     const VkShaderModule fragment = createShaderModule(shaderDir / "shader.frag");
 
@@ -100,7 +100,8 @@ VkShaderModule Renderer::createShaderModule(const std::filesystem::path &path)
     for (const std::filesystem::path &include : binary.includes) {
         includes += std::format(" {}", include.string());
     }
-    core::log(std::format("Shader {}, includes:{}", path.filename().string(), includes.empty() ? " none" : includes));
+    core::log(std::format("Shader {} ({}), includes:{}", path.filename().string(),
+                          binary.cacheHit ? "cache hit" : "compiled", includes.empty() ? " none" : includes));
 
     const std::string name = path.filename().string();
     return gfx::createShaderModule(m_ctx, binary.spirv, name.c_str());

@@ -39,7 +39,7 @@ public:
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    void init(const std::filesystem::path &shaderDir);
+    void init(const std::filesystem::path &shaderDir, const std::filesystem::path &cacheDir);
     void shutdown();
 
     void render(Scene &scene, const Camera &camera);
