@@ -51,6 +51,9 @@ private:
     bool        m_minimized = false;
     AppLayer   *m_layer     = nullptr;
 
+    uint64_t m_initStartNs      = 0;
+    bool     m_firstFrameLogged = false;
+
     core::FrameStats m_frameStats;
 
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.

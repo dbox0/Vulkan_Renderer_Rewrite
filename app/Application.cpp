@@ -10,6 +10,7 @@
 
 void Application::init()
 {
+    m_initStartNs = SDL_GetTicksNS();
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         core::fatal(std::format("SDL_Init failed: {}", SDL_GetError()));
     }
@@ -94,6 +95,11 @@ void Application::run()
             m_camera.update(keys, deltaTime);
         }
         m_renderer.render(m_scene, m_camera);
+
+        if (!m_firstFrameLogged && m_renderer.frameNumber() > 0) {
+            m_firstFrameLogged = true;
+            core::log(std::format("First frame after {:.1f} ms", static_cast<double>(SDL_GetTicksNS() - m_initStartNs) * 1e-6));
+        }
     }
 }
 

@@ -49,6 +49,7 @@ public:
     void setOverlay(Overlay overlay) { m_overlay = std::move(overlay); }
 
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
+    uint64_t                frameNumber() const { return m_frameNumber; }
 
 private:
     struct Frame
@@ -87,6 +88,8 @@ private:
     uint64_t    m_frameNumber   = 0;   // frames submitted so far; frame n signals n + 1
 
     gfx::ShaderCompiler m_shaderCompiler;
+    uint32_t            m_shaderCacheHits   = 0;
+    uint32_t            m_shaderCacheMisses = 0;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     VkPipeline       m_pipeline       = VK_NULL_HANDLE;
     gfx::Image       m_depth;

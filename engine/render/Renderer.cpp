@@ -27,7 +27,12 @@ void Renderer::init(const std::filesystem::path &shaderDir, const std::filesyste
     m_drawItems.reserve(1024);
     createFrames();
     m_gpuProfiler.init(m_ctx, FramesInFlight, MaxGpuScopes);
+
+    const auto pipelineStart = std::chrono::steady_clock::now();
     createPipeline(shaderDir);
+    const std::chrono::duration<double, std::milli> pipelineTime = std::chrono::steady_clock::now() - pipelineStart;
+    core::log(std::format("Pipelines: {:.1f} ms ({} SPIR-V hits, {} misses)", pipelineTime.count(),
+                          m_shaderCacheHits, m_shaderCacheMisses));
     resizeDepthIfNeeded();
 }
 
@@ -95,6 +100,7 @@ VkShaderModule Renderer::createShaderModule(const std::filesystem::path &path)
     if (!binary.ok()) {
         core::fatal(std::format("Shader compilation failed:\n{}", binary.error));
     }
+    ++(binary.cacheHit ? m_shaderCacheHits : m_shaderCacheMisses);
 
     std::string includes;
     for (const std::filesystem::path &include : binary.includes) {
