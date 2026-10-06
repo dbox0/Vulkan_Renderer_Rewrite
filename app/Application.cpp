@@ -56,7 +56,7 @@ void Application::init()
     m_renderer.init(shaderDirectory(base), cacheDir);
 
     m_scene.initialize(MaxNodes);
-    m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes);
+    m_geometry.reserve(MaxVertices, MaxIndices);
 }
 
 bool Application::loadData(const std::filesystem::path &modelPath)

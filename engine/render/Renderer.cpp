@@ -197,7 +197,9 @@ void Renderer::render(Scene &scene, const Camera &camera)
     frameDataPtr->view           = camera.view();
     frameDataPtr->proj           = camera.projection(aspectRatio) ;
     frameDataPtr->cameraPosition = glm::vec4(camera.position,0.0f);
-    frameDataPtr->vertices       = m_geometry.vertexBufferAddress();
+    frameDataPtr->positions      = m_geometry.positionsAddress();
+    frameDataPtr->attributes     = m_geometry.attributesAddress();
+    frameDataPtr->colors         = m_geometry.colorsAddress();
     frameDataPtr->materials      = m_resources.materialBufferAddress();
     frameDataPtr->time           =  std::chrono::duration<float>(std::chrono::steady_clock::now() - m_startTime).count();
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);

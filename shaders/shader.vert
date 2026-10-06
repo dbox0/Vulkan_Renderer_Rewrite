@@ -17,9 +17,19 @@ layout(buffer_reference, scalar) readonly buffer FrameDataPtr
     FrameData data;
 };
 
-layout(buffer_reference, scalar) readonly buffer VertexPtr
+layout(buffer_reference, scalar) readonly buffer PositionPtr
 {
-    Vertex vertices[];
+    vec3 positions[];
+};
+
+layout(buffer_reference, scalar) readonly buffer AttributePtr
+{
+    VertexAttributes attributes[];
+};
+
+layout(buffer_reference, scalar) readonly buffer ColorPtr
+{
+    uint colors[];
 };
 
 layout(buffer_reference, scalar) readonly buffer MaterialPtr
@@ -39,18 +49,30 @@ layout (location = 3) out flat uint outTextureIndex;
 layout (location = 4) out flat vec4 outMaterialBaseColor;
 layout (location = 5) out flat uint outSamplerIndex;
 
+vec3 octDecode(vec2 e)
+{
+    vec3 n = vec3(e, 1.0 - abs(e.x) - abs(e.y));
+    float t = max(-n.z, 0.0);
+    n.xy += vec2(n.x >= 0.0 ? -t : t, n.y >= 0.0 ? -t : t);
+    return normalize(n);
+}
+
 void main()
 {
     FrameDataPtr frame = FrameDataPtr(pc.frame);
 
-    Vertex v = VertexPtr(frame.data.vertices).vertices[gl_VertexIndex];
+    vec3 position = PositionPtr(frame.data.positions).positions[gl_VertexIndex];
+    VertexAttributes attributes = AttributePtr(frame.data.attributes).attributes[gl_VertexIndex];
+    vec4 color = unpackUnorm4x8(ColorPtr(frame.data.colors).colors[gl_VertexIndex]);
+    vec3 normal = octDecode(unpackSnorm2x16(attributes.normal));
+
     RenderItem ri = RenderItemPtr(pc.draws).renderItems[gl_InstanceIndex];
     Material material = MaterialPtr(frame.data.materials).materials[ri.materialIndex];
 
-    gl_Position = frame.data.viewProj * ri.worldMatrix * vec4(v.position, 1.0);
-    outColor = v.color;
-    outNormal = mat3x3(transpose(inverse(ri.worldMatrix))) * v.normal;
-    outUV = v.uv;
+    gl_Position = frame.data.viewProj * ri.worldMatrix * vec4(position, 1.0);
+    outColor = color.rgb;
+    outNormal = mat3x3(transpose(inverse(ri.worldMatrix))) * normal;
+    outUV = attributes.uv;
     outTextureIndex = material.textureIndex;
     outMaterialBaseColor = material.baseColor;
     outSamplerIndex = material.samplerIndex;

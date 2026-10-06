@@ -1,12 +1,14 @@
 #include "GltfLoader.h"
 
-#include <cassert>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <format>
 #include <iostream>
 #include <tuple>
 #include <unordered_map>
 
+#include <glm/gtc/packing.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <tiny_gltf_v3.h>
@@ -17,6 +19,92 @@
 #include "render/ResourceStore.h"
 #include "render/Types.h"
 #include "scene/Scene.h"
+
+namespace
+{
+
+const glm::vec3 DefaultNormal(0.0f, 1.0f, 0.0f);
+
+float readComponent(const unsigned char *src, int32_t componentType, bool normalized)
+{
+    switch (componentType) {
+    case TG3_COMPONENT_TYPE_FLOAT: {
+        float value = 0.0f;
+        std::memcpy(&value, src, sizeof(value));
+        return value;
+    }
+    case TG3_COMPONENT_TYPE_UNSIGNED_BYTE: {
+        const float value = static_cast<float>(*src);
+        return normalized ? value / 255.0f : value;
+    }
+    case TG3_COMPONENT_TYPE_UNSIGNED_SHORT: {
+        uint16_t raw = 0;
+        std::memcpy(&raw, src, sizeof(raw));
+        const float value = static_cast<float>(raw);
+        return normalized ? value / 65535.0f : value;
+    }
+    case TG3_COMPONENT_TYPE_BYTE: {
+        int8_t raw = 0;
+        std::memcpy(&raw, src, sizeof(raw));
+        const float value = static_cast<float>(raw);
+        return normalized ? std::max(value / 127.0f, -1.0f) : value;
+    }
+    case TG3_COMPONENT_TYPE_SHORT: {
+        int16_t raw = 0;
+        std::memcpy(&raw, src, sizeof(raw));
+        const float value = static_cast<float>(raw);
+        return normalized ? std::max(value / 32767.0f, -1.0f) : value;
+    }
+    default:
+        return 0.0f;
+    }
+}
+
+glm::vec4 readElement(const tg3_model &model, const tg3_accessor &accessor, uint64_t index)
+{
+    glm::vec4 result(0.0f, 0.0f, 0.0f, 1.0f);
+    if (accessor.buffer_view < 0) {
+        return result;
+    }
+
+    const tg3_buffer_view &view   = model.buffer_views[accessor.buffer_view];
+    const tg3_buffer      &buffer = model.buffers[view.buffer];
+
+    const int32_t stride          = tg3_accessor_byte_stride(&accessor, &view);
+    const int32_t componentSize   = tg3_component_size(accessor.component_type);
+    const int32_t componentCount  = std::min(tg3_num_components(accessor.type), 4);
+    if (stride <= 0 || componentSize <= 0 || componentCount <= 0) {
+        return result;
+    }
+
+    const unsigned char *element = buffer.data.data + view.byte_offset + accessor.byte_offset
+                                 + index * static_cast<uint64_t>(stride);
+    for (int32_t c = 0; c < componentCount; ++c) {
+        result[c] = readComponent(element + c * componentSize, accessor.component_type, accessor.normalized != 0);
+    }
+    return result;
+}
+
+glm::vec2 octEncode(glm::vec3 n)
+{
+    n /= std::abs(n.x) + std::abs(n.y) + std::abs(n.z);
+    glm::vec2 p(n.x, n.y);
+    if (n.z < 0.0f) {
+        const glm::vec2 s(p.x >= 0.0f ? 1.0f : -1.0f, p.y >= 0.0f ? 1.0f : -1.0f);
+        p = (1.0f - glm::abs(glm::vec2(p.y, p.x))) * s;
+    }
+    return p;
+}
+
+uint32_t encodeNormal(glm::vec3 n)
+{
+    if (glm::dot(n, n) < 1e-12f) {
+        n = DefaultNormal;
+    }
+    return glm::packSnorm2x16(octEncode(glm::normalize(n)));
+}
+
+}
 
 
 bool GltfLoader::load(const std::filesystem::path &filepath)
@@ -175,52 +263,41 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 continue;
             }
 
-            assert(positionAccessor->type == TG3_TYPE_VEC3 &&
-                   positionAccessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
+            const uint64_t vertexCount = positionAccessor->count;
+            subMesh.vertexCount = vertexCount;
+            subMesh.vertexStart = m_geometry.appendVertices(vertexCount);
+            const GeometryStore::VertexStreams streams = m_geometry.streamsAt(subMesh.vertexStart);
 
-            subMesh.vertexCount = positionAccessor->count;
-            subMesh.vertexStart = m_geometry.appendVertices(positionAccessor->count);
-
-            const size_t vertexStart = subMesh.vertexStart;
-            auto writeAttribute = [this, &model, vertexStart]<typename T>(
-                T Vertex::*member, const tg3_str_int_pair *attr)
-            {
-                const tg3_accessor    *accessor    = &model.accessors[attr->value];
-                const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
-                const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
-
-                const size_t bufferOffset = buffer_view->byte_offset + accessor->byte_offset;
-                const size_t stride = buffer_view->byte_stride != 0 ? buffer_view->byte_stride : sizeof(T);
-
-                for (uint64_t index = 0; index < accessor->count; ++index) {
-                    const size_t elementOffset = bufferOffset + index * stride;
-                    const float *data = reinterpret_cast<const float *>(buffer->data.data + elementOffset);
-
-                    Vertex *vertex = m_geometry.vertexAt(vertexStart + index);
-                    if constexpr (std::is_same_v<T, glm::vec3>) {
-                        vertex->*member = glm::vec3(data[0], data[1], data[2]);
-                    } else if constexpr (std::is_same_v<T, glm::vec2>) {
-                        vertex->*member = glm::vec2(data[0], data[1]);
-                    }
-                }
-            };
-
+            bool hasNormals = false;
             for (uint32_t v = 0; v < primitive->attributes_count; ++v) {
                 const tg3_str_int_pair *attr = &primitive->attributes[v];
-                const tg3_accessor *accessor = &model.accessors[attr->value];
+                const tg3_accessor &accessor = model.accessors[attr->value];
+                const uint64_t count = std::min(accessor.count, vertexCount);
 
                 if (std::strcmp(attr->key.data, "POSITION") == 0) {
-                    writeAttribute(&Vertex::position, attr);
+                    for (uint64_t vi = 0; vi < count; ++vi) {
+                        streams.positions[vi] = glm::vec3(readElement(model, accessor, vi));
+                    }
                 } else if (std::strcmp(attr->key.data, "NORMAL") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC3 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::normal, attr);
-                } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC3 || accessor->type == TG3_TYPE_VEC4);
-                    assert(accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::color, attr);
+                    hasNormals = true;
+                    for (uint64_t vi = 0; vi < count; ++vi) {
+                        streams.attributes[vi].normal = encodeNormal(glm::vec3(readElement(model, accessor, vi)));
+                    }
                 } else if (std::strcmp(attr->key.data, "TEXCOORD_0") == 0) {
-                    assert(accessor->type == TG3_TYPE_VEC2 && accessor->component_type == TG3_COMPONENT_TYPE_FLOAT);
-                    writeAttribute(&Vertex::uv, attr);
+                    for (uint64_t vi = 0; vi < count; ++vi) {
+                        streams.attributes[vi].uv = glm::vec2(readElement(model, accessor, vi));
+                    }
+                } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
+                    for (uint64_t vi = 0; vi < count; ++vi) {
+                        streams.colors[vi] = glm::packUnorm4x8(glm::clamp(readElement(model, accessor, vi), 0.0f, 1.0f));
+                    }
+                }
+            }
+
+            if (!hasNormals) {
+                const uint32_t defaultNormal = encodeNormal(DefaultNormal);
+                for (uint64_t vi = 0; vi < vertexCount; ++vi) {
+                    streams.attributes[vi].normal = defaultNormal;
                 }
             }
 

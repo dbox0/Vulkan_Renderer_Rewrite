@@ -43,8 +43,8 @@ private:
     void cyclePresentMode();
 
     static constexpr size_t   MaxNodes          = 4096;
-    static constexpr size_t   VertexBudgetBytes = 64ull * 1024 * 1024;
-    static constexpr size_t   IndexBudgetBytes  = 32ull * 1024 * 1024;
+    static constexpr size_t   MaxVertices       = 2ull * 1024 * 1024;
+    static constexpr size_t   MaxIndices        = 8ull * 1024 * 1024;
 
     SDL_Window *m_window    = nullptr;
     bool        m_running   = false;
