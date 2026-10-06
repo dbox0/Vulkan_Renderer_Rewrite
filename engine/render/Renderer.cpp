@@ -24,6 +24,7 @@ static_assert(sizeof(PushConstants) <= PushConstantSize);
 void Renderer::init(const std::filesystem::path &shaderDir, const std::filesystem::path &cacheDir)
 {
     m_shaderCompiler.init({ shaderDir }, cacheDir);
+    m_pipelines.init(m_ctx, m_shaderCompiler);
     m_drawItems.reserve(1024);
     createFrames();
     m_gpuProfiler.init(m_ctx, FramesInFlight, MaxGpuScopes);
@@ -32,7 +33,7 @@ void Renderer::init(const std::filesystem::path &shaderDir, const std::filesyste
     createPipeline(shaderDir);
     const std::chrono::duration<double, std::milli> pipelineTime = std::chrono::steady_clock::now() - pipelineStart;
     core::log(std::format("Pipelines: {:.1f} ms ({} SPIR-V hits, {} misses)", pipelineTime.count(),
-                          m_shaderCacheHits, m_shaderCacheMisses));
+                          m_pipelines.shaderCacheHits(), m_pipelines.shaderCacheMisses()));
     resizeDepthIfNeeded();
 }
 
@@ -42,7 +43,7 @@ void Renderer::shutdown()
 
     m_gpuProfiler.destroy(m_ctx);
     m_ctx.destroyImage(m_depth);
-    vkDestroyPipeline(device, m_pipeline, nullptr);
+    m_pipelines.destroy();
     vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
 
     for (Frame &frame : m_frames) {
@@ -74,12 +75,7 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     };
     VK_CHECK(vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_pipelineLayout));
 
-    const VkShaderModule vertex = createShaderModule(shaderDir / "shader.vert");
-    const VkShaderModule fragment = createShaderModule(shaderDir / "shader.frag");
-
-    m_pipeline = gfx::createGraphicsPipeline(m_ctx, {
-        .vertex = vertex,
-        .fragment = fragment,
+    m_scenePipeline = m_pipelines.addGraphics("scene", shaderDir / "shader.vert", shaderDir / "shader.frag", {
         .layout = m_pipelineLayout,
         .colorFormats = { gfx::Swapchain::Format },
         .depthFormat = DepthFormat,
@@ -88,29 +84,7 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
         .depthTest = true,
         .depthWrite = true,
         .depthCompare = VK_COMPARE_OP_LESS
-    }, "scene");
-
-    vkDestroyShaderModule(m_ctx.device(), vertex, nullptr);
-    vkDestroyShaderModule(m_ctx.device(), fragment, nullptr);
-}
-
-VkShaderModule Renderer::createShaderModule(const std::filesystem::path &path)
-{
-    const gfx::ShaderBinary binary = m_shaderCompiler.compile(path);
-    if (!binary.ok()) {
-        core::fatal(std::format("Shader compilation failed:\n{}", binary.error));
-    }
-    ++(binary.cacheHit ? m_shaderCacheHits : m_shaderCacheMisses);
-
-    std::string includes;
-    for (const std::filesystem::path &include : binary.includes) {
-        includes += std::format(" {}", include.string());
-    }
-    core::log(std::format("Shader {} ({}), includes:{}", path.filename().string(),
-                          binary.cacheHit ? "cache hit" : "compiled", includes.empty() ? " none" : includes));
-
-    const std::string name = path.filename().string();
-    return gfx::createShaderModule(m_ctx, binary.spirv, name.c_str());
+    });
 }
 
 void Renderer::createFrames() {
@@ -363,7 +337,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
 
             vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_scenePipeline));
             vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.count,
                          sizeof(VkDrawIndexedIndirectCommand));

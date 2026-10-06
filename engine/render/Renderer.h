@@ -12,6 +12,7 @@
 #include "gfx/FrameArena.h"
 #include "gfx/GpuProfiler.h"
 #include "gfx/ShaderCompiler.h"
+#include "PipelineRegistry.h"
 #include "scene/Scene.h"
 
 
@@ -70,7 +71,6 @@ private:
 
     void createFrames();
     void createPipeline(const std::filesystem::path &shaderDir);
-    VkShaderModule createShaderModule(const std::filesystem::path &path);
     void resizeDepthIfNeeded();
 
     // Fills this frame's indirect + render-item buffers. Returns the draw count written.
@@ -88,10 +88,9 @@ private:
     uint64_t    m_frameNumber   = 0;   // frames submitted so far; frame n signals n + 1
 
     gfx::ShaderCompiler m_shaderCompiler;
-    uint32_t            m_shaderCacheHits   = 0;
-    uint32_t            m_shaderCacheMisses = 0;
+    PipelineRegistry    m_pipelines;
+    PipelineId          m_scenePipeline;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline       m_pipeline       = VK_NULL_HANDLE;
     gfx::Image       m_depth;
     gfx::GpuProfiler m_gpuProfiler;
 

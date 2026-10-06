@@ -35,6 +35,7 @@ enable_warnings(scene)
 
 add_library(render STATIC
     render/Renderer.cpp
+    render/PipelineRegistry.cpp
     render/GeometryStore.cpp
     render/ResourceStore.cpp)
 target_link_libraries(render PUBLIC gfx scene)
