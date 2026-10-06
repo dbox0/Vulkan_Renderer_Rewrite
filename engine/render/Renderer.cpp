@@ -173,6 +173,9 @@ void Renderer::render(Scene &scene, const Camera &camera)
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
     m_ctx.queue().wait(frame.submitValue);
     m_ctx.collect();
+#ifndef NDEBUG
+    m_pipelines.pollChanges();
+#endif
 
 
     uint32_t imageIndex = 0;

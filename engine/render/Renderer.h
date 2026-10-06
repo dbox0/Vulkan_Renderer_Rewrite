@@ -52,6 +52,8 @@ public:
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
     uint64_t                frameNumber() const { return m_frameNumber; }
 
+    void reloadShaders() { m_pipelines.reloadAll(); }
+
 private:
     struct Frame
     {

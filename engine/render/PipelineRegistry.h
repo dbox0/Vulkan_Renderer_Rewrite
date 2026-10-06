@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -21,6 +22,7 @@ struct PipelineId
     uint32_t index = UINT32_MAX;
 };
 
+// Owns every pipeline together with what it needs to rebuild itself. Callers hold IDs, never handles.
 class PipelineRegistry
 {
 public:
@@ -32,6 +34,9 @@ public:
                            gfx::GraphicsPipelineDesc desc);
 
     VkPipeline get(PipelineId id) const;
+
+    void pollChanges();
+    void reloadAll();
 
     uint32_t shaderCacheHits() const   { return m_cacheHits; }
     uint32_t shaderCacheMisses() const { return m_cacheMisses; }
@@ -53,7 +58,12 @@ private:
         std::vector<WatchedFile>  watched;    // both stages plus every include they opened
     };
 
-    // Returns VK_NULL_HANDLE on any failure logging why.
+    static constexpr std::chrono::milliseconds PollInterval{ 500 };
+
+    bool takeChanges(Entry &entry) const;
+    void reload(Entry &entry);
+
+    // Returns VK_NULL_HANDLE on any failure, logging why.
     VkPipeline     build(const Entry &entry, std::vector<WatchedFile> &watched);
     VkShaderModule compileModule(const std::filesystem::path &path, std::vector<WatchedFile> &watched);
 
@@ -62,6 +72,8 @@ private:
     std::vector<Entry>         m_entries;
     uint32_t                   m_cacheHits   = 0;
     uint32_t                   m_cacheMisses = 0;
+
+    std::chrono::steady_clock::time_point m_lastPoll{};
 };
 
 }

@@ -143,6 +143,8 @@ void Application::handleEvent(const SDL_Event &event)
             m_running = false;
         } else if (event.key.key == SDLK_V && !event.key.repeat) {
             cyclePresentMode();
+        } else if (event.key.key == SDLK_F5 && !event.key.repeat) {
+            m_renderer.reloadShaders();
         }
         break;
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:

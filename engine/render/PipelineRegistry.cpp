@@ -54,6 +54,69 @@ VkPipeline PipelineRegistry::get(PipelineId id) const
     return m_entries[id.index].pipeline;
 }
 
+void PipelineRegistry::pollChanges()
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - m_lastPoll < PollInterval) {
+        return;
+    }
+    m_lastPoll = now;
+
+    for (Entry &entry : m_entries) {
+        if (takeChanges(entry)) {
+            reload(entry);
+        }
+    }
+}
+
+void PipelineRegistry::reloadAll()
+{
+    for (Entry &entry : m_entries) {
+        takeChanges(entry);
+        reload(entry);
+    }
+}
+
+bool PipelineRegistry::takeChanges(Entry &entry) const
+{
+    std::vector<std::filesystem::file_time_type> times;
+    times.reserve(entry.watched.size());
+    for (const WatchedFile &file : entry.watched) {
+        std::error_code ec;
+        times.push_back(std::filesystem::last_write_time(file.path, ec));
+        if (ec) {
+            return false;   // probably an editor's save-by-rename in progress; try again next poll
+        }
+    }
+
+    bool changed = false;
+    for (size_t i = 0; i < times.size(); ++i) {
+        changed |= entry.watched[i].time != times[i];
+        entry.watched[i].time = times[i];
+    }
+    return changed;
+}
+
+void PipelineRegistry::reload(Entry &entry)
+{
+    const auto start = std::chrono::steady_clock::now();
+
+    std::vector<WatchedFile> watched;
+    const VkPipeline pipeline = build(entry, watched);
+    if (!pipeline) {
+        core::warn(std::format("Reloading {} failed; the previous pipeline stays", entry.name));
+        return;
+    }
+
+    // Frames in flight may still have the old pipeline bound.
+    m_ctx->retire([device = m_ctx->device(), old = entry.pipeline] { vkDestroyPipeline(device, old, nullptr); });
+    entry.pipeline = pipeline;
+    entry.watched = std::move(watched);
+
+    const std::chrono::duration<double, std::milli> elapsed = std::chrono::steady_clock::now() - start;
+    core::log(std::format("Reloaded {} in {:.1f} ms", entry.name, elapsed.count()));
+}
+
 VkPipeline PipelineRegistry::build(const Entry &entry, std::vector<WatchedFile> &watched)
 {
     watched.clear();
