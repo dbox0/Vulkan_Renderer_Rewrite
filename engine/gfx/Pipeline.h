@@ -25,6 +25,8 @@ struct GraphicsPipelineDesc
     VkCompareOp depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL;
 };
 
+
+VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name);
 VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name);
 
 }

@@ -8,6 +8,30 @@
 #include "assets/GltfLoader.h"
 #include "core/Log.h"
 
+namespace
+{
+
+// RENDERER_SHADER_DIR overrides <bin>/shaders: debug run can read the source tree.
+std::filesystem::path shaderDirectory(const std::filesystem::path &base)
+{
+    const char *overrideDir = SDL_getenv("RENDERER_SHADER_DIR");
+    if (overrideDir && *overrideDir) {
+        std::error_code ec;
+        const std::filesystem::path dir = std::filesystem::absolute(overrideDir, ec);
+        if (ec || !std::filesystem::is_directory(dir, ec)) {
+            core::fatal(std::format("RENDERER_SHADER_DIR is not a directory: {}", overrideDir));
+        }
+        core::log(std::format("Shaders from RENDERER_SHADER_DIR: {}", dir.string()));
+        return dir;
+    }
+#ifndef NDEBUG
+    core::log("Shaders from <bin>/shaders; set RENDERER_SHADER_DIR=<repo>/shaders to hot-reload source edits");
+#endif
+    return base / "shaders";
+}
+
+}
+
 void Application::init()
 {
     m_initStartNs = SDL_GetTicksNS();
@@ -29,7 +53,7 @@ void Application::init()
     m_swapchain.create(m_window);
 
     m_resources.initialize();
-    m_renderer.init(base / "shaders", cacheDir);
+    m_renderer.init(shaderDirectory(base), cacheDir);
 
     m_scene.initialize(MaxNodes);
     m_geometry.reserve(VertexBudgetBytes, IndexBudgetBytes);

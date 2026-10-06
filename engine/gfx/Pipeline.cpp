@@ -7,7 +7,7 @@
 namespace gfx
 {
 
-VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name)
+VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name)
 {
     const std::array stages
     {
@@ -113,8 +113,21 @@ VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc
     };
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateGraphicsPipelines(ctx.device(), ctx.pipelineCache(), 1, &createInfo, nullptr, &pipeline));
+    const VkResult result = vkCreateGraphicsPipelines(ctx.device(), ctx.pipelineCache(), 1, &createInfo, nullptr, &pipeline);
+    if (result != VK_SUCCESS) {
+        core::warn(std::format("Creating pipeline {} returned {}", name, vkResultName(result)));
+        return VK_NULL_HANDLE;
+    }
     ctx.setName(VK_OBJECT_TYPE_PIPELINE, pipeline, name);
+    return pipeline;
+}
+
+VkPipeline createGraphicsPipeline(const Context &ctx, const GraphicsPipelineDesc &desc, const char *name)
+{
+    const VkPipeline pipeline = tryCreateGraphicsPipeline(ctx, desc, name);
+    if (!pipeline) {
+        core::fatal(std::format("Cannot create pipeline {}", name));
+    }
     return pipeline;
 }
 
