@@ -20,17 +20,3 @@ Extended editor functionality will gradually be added back in.
 
 Presets: `debug`, `debug-asan`, `release`. Debug builds enable validation and synchronization validation.
 
-## Layout
-
-    engine/core     logging and fatal errors
-    engine/gfx      context, swapchain, buffers, images, pipelines, barriers
-    engine/scene    nodes, scene graph, camera (no Vulkan)
-    engine/render   frame loop, geometry and resource stores
-    engine/assets   glTF loader
-    app/            window, events, main loop, AppLayer hook (vulkanapp)
-    editor/         ImGui editor, attaches as an AppLayer (vulkaneditor)
-    shaders/        GLSL, compiled at runtime from <bin>/shaders
-    third_party/    tiny_gltf_v3, stb_image
-    assets/         models and textures
-
-Dependencies point down: core <- gfx <- render <- assets <- app <- editor, and core <- scene <- render.
