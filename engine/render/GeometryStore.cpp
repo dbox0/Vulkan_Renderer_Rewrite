@@ -1,7 +1,8 @@
 #include "GeometryStore.h"
 
-#include <algorithm>
 #include <format>
+#include <optional>
+#include <string_view>
 
 #include "gfx/Context.h"
 #include "gfx/StagingUploader.h"
@@ -9,20 +10,34 @@
 namespace
 {
 
-constexpr uint32_t White = 0xFFFFFFFFu;
+constexpr VkBufferUsageFlags StreamUsage =
+    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+constexpr uint64_t MiB = 1024 * 1024;
+
+void warnFull(std::string_view meshName, std::string_view what, const core::RangeAllocator &allocator, uint64_t requested)
+{
+    core::warn(std::format("Mesh '{}' skipped: needs {} {}, {} of {} used, largest free run {}",
+                           meshName, requested, what, allocator.used(), allocator.capacity(), allocator.largestFree()));
+}
 
 }
 
-void GeometryStore::reserve(size_t maxVertices, size_t maxIndices)
+void GeometryStore::init()
 {
-    m_maxVertices = maxVertices;
-    m_maxIndices  = maxIndices;
-    m_positions.resize(maxVertices);
-    m_attributes.resize(maxVertices);
-    m_colors.resize(maxVertices);
-    m_indices.resize(maxIndices);
-    m_vertOffset = 0;
-    m_idxOffset  = 0;
+    const VkDeviceSize positionBytes  = VkDeviceSize{ MaxVertices } * sizeof(glm::vec3);
+    const VkDeviceSize attributeBytes = VkDeviceSize{ MaxVertices } * sizeof(VertexAttributes);
+    const VkDeviceSize colorBytes     = VkDeviceSize{ MaxVertices } * sizeof(uint32_t);
+    const VkDeviceSize indexBytes     = VkDeviceSize{ MaxIndices }  * sizeof(uint32_t);
+
+    m_positionBuffer  = m_ctx.createBuffer(positionBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "positions");
+    m_attributeBuffer = m_ctx.createBuffer(attributeBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "vertex attributes");
+    m_colorBuffer     = m_ctx.createBuffer(colorBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "vertex colors");
+    m_indexBuffer     = m_ctx.createBuffer(indexBytes,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "indices");
+
+    core::log(std::format("Geometry buffers: {} vertices, {} indices, {} MB",
+                          MaxVertices, MaxIndices, (positionBytes + attributeBytes + colorBytes + indexBytes) / MiB));
 }
 
 void GeometryStore::shutdown()
@@ -35,115 +50,96 @@ void GeometryStore::shutdown()
     m_attributeBuffer = {};
     m_colorBuffer     = {};
     m_indexBuffer     = {};
-    m_meshes.clear();
-    m_positions.clear();
-    m_attributes.clear();
-    m_colors.clear();
-    m_indices.clear();
-    m_vertOffset = 0;
-    m_idxOffset  = 0;
-    m_uploaded = false;
 }
 
-void GeometryStore::reset()
+uint32_t GeometryStore::addMesh(const MeshData &data)
 {
-    shutdown();
-    reserve(m_maxVertices, m_maxIndices);
-}
+    const uint64_t vertexCount = data.positions.size();
+    const uint64_t indexCount  = data.indices.size();
 
-size_t GeometryStore::appendVertices(size_t count)
-{
-    if (m_uploaded) {
-        core::fatal("Cannot append geometry after uploadToGpu()");
+    if (data.attributes.size() != vertexCount || data.colors.size() != vertexCount) {
+        core::fatal(std::format("Mesh '{}': vertex streams differ in length ({} positions, {} attributes, {} colors)",
+                                data.name, vertexCount, data.attributes.size(), data.colors.size()));
     }
-    if (m_vertOffset + count > m_maxVertices) {
-        core::fatal(std::format("Vertex capacity exceeded ({} vertices); raise MaxVertices", m_maxVertices));
-    }
-
-    const size_t start = m_vertOffset;
-    m_vertOffset += count;
-
-    const auto first = static_cast<std::ptrdiff_t>(start);
-    std::fill_n(m_positions.begin() + first, count, glm::vec3(0.0f));
-    std::fill_n(m_attributes.begin() + first, count, VertexAttributes{ .normal = 0, .uv = glm::vec2(0.0f) });
-    std::fill_n(m_colors.begin() + first, count, White);
-    return start;
-}
-
-size_t GeometryStore::appendIndices(size_t count)
-{
-    if (m_uploaded) {
-        core::fatal("Cannot append geometry after uploadToGpu()");
-    }
-    if (m_idxOffset + count > m_maxIndices) {
-        core::fatal(std::format("Index capacity exceeded ({} indices); raise MaxIndices", m_maxIndices));
+    if (vertexCount == 0 || indexCount == 0) {
+        core::warn(std::format("Mesh '{}' skipped: {} vertices, {} indices", data.name, vertexCount, indexCount));
+        return 0;
     }
 
-    const size_t start = m_idxOffset;
-    m_idxOffset += count;
-    return start;
-}
+    const std::optional<uint64_t> vertexOffset = m_vertexAlloc.allocate(vertexCount);
+    if (!vertexOffset) {
+        warnFull(data.name, "vertices", m_vertexAlloc, vertexCount);
+        return 0;
+    }
+    const std::optional<uint64_t> indexOffset = m_indexAlloc.allocate(indexCount);
+    if (!indexOffset) {
+        m_vertexAlloc.free(*vertexOffset, vertexCount);
+        warnFull(data.name, "indices", m_indexAlloc, indexCount);
+        return 0;
+    }
 
-GeometryStore::VertexStreams GeometryStore::streamsAt(size_t index)
-{
-    return VertexStreams
+    m_uploader.uploadBuffer(m_positionBuffer, *vertexOffset * sizeof(glm::vec3),
+                            data.positions.data(), vertexCount * sizeof(glm::vec3));
+    m_uploader.uploadBuffer(m_attributeBuffer, *vertexOffset * sizeof(VertexAttributes),
+                            data.attributes.data(), vertexCount * sizeof(VertexAttributes));
+    m_uploader.uploadBuffer(m_colorBuffer, *vertexOffset * sizeof(uint32_t),
+                            data.colors.data(), vertexCount * sizeof(uint32_t));
+    m_uploader.uploadBuffer(m_indexBuffer, *indexOffset * sizeof(uint32_t),
+                            data.indices.data(), indexCount * sizeof(uint32_t));
+
+    Mesh mesh
     {
-        .positions  = &m_positions[index],
-        .attributes = &m_attributes[index],
-        .colors     = &m_colors[index]
+        .name      = data.name,
+        .subMeshes = data.subMeshes,
+        .vertices  = { .offset = *vertexOffset, .count = vertexCount },
+        .indices   = { .offset = *indexOffset, .count = indexCount }
     };
-}
+    const auto vertexBase = static_cast<uint32_t>(*vertexOffset);
+    const auto indexBase  = static_cast<uint32_t>(*indexOffset);
+    for (SubMesh &subMesh : mesh.subMeshes) {
+        subMesh.vertexStart += vertexBase;
+        subMesh.indexStart  += indexBase;
+    }
 
-uint32_t GeometryStore::addMesh(Mesh &&mesh)
-{
-    m_meshes.push_back(std::move(mesh));
+    m_meshes.push_back(StoredMesh{ .mesh = std::move(mesh), .alive = true });
+    ++m_liveMeshes;
     return static_cast<uint32_t>(m_meshes.size());
 }
 
-bool GeometryStore::uploadToGpu()
+void GeometryStore::removeMesh(uint32_t meshId)
 {
-    if (m_uploaded) {
-        core::warn("GeometryStore::uploadToGpu called twice");
-        return false;
+    if (meshId == 0 || meshId > m_meshes.size() || !m_meshes[meshId - 1].alive) {
+        core::warn(std::format("GeometryStore::removeMesh: mesh {} is not alive", meshId));
+        return;
     }
 
-    const size_t positionBytes  = m_vertOffset * sizeof(glm::vec3);
-    const size_t attributeBytes = m_vertOffset * sizeof(VertexAttributes);
-    const size_t colorBytes     = m_vertOffset * sizeof(uint32_t);
-    const size_t indexBytes     = m_idxOffset  * sizeof(uint32_t);
+    StoredMesh &stored = m_meshes[meshId - 1];
+    stored.alive = false;
+    --m_liveMeshes;
 
-    if (!positionBytes || !indexBytes) {
-        core::warn("No geometry to upload");
-        return false;
+    const core::Range vertices = stored.mesh.vertices;
+    const core::Range indices  = stored.mesh.indices;
+    m_ctx.retire([this, vertices, indices] {
+        m_vertexAlloc.free(vertices.offset, vertices.count);
+        m_indexAlloc.free(indices.offset, indices.count);
+    });
+}
+
+void GeometryStore::clear()
+{
+    for (size_t i = 0; i < m_meshes.size(); ++i) {
+        if (m_meshes[i].alive) {
+            removeMesh(static_cast<uint32_t>(i + 1));
+        }
     }
+    m_meshes.clear();
+    m_liveMeshes = 0;
+}
 
-    core::log(std::format("Uploading geometry: {} verts ({} MB), {} indices ({} MB)",
-                          m_vertOffset, (positionBytes + attributeBytes + colorBytes) / 1024 / 1024,
-                          m_idxOffset, indexBytes / 1024 / 1024));
-
-    constexpr VkBufferUsageFlags streamUsage =
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-    m_positionBuffer  = m_ctx.createBuffer(positionBytes, streamUsage, gfx::MemoryIntent::GpuOnly, "positions");
-    m_attributeBuffer = m_ctx.createBuffer(attributeBytes, streamUsage, gfx::MemoryIntent::GpuOnly, "vertex attributes");
-    m_colorBuffer     = m_ctx.createBuffer(colorBytes, streamUsage, gfx::MemoryIntent::GpuOnly, "vertex colors");
-    m_indexBuffer     = m_ctx.createBuffer(indexBytes,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "indices");
-
-    m_uploader.uploadBuffer(m_positionBuffer, 0, m_positions.data(), positionBytes);
-    m_uploader.uploadBuffer(m_attributeBuffer, 0, m_attributes.data(), attributeBytes);
-    m_uploader.uploadBuffer(m_colorBuffer, 0, m_colors.data(), colorBytes);
-    m_uploader.uploadBuffer(m_indexBuffer, 0, m_indices.data(), indexBytes);
-
-    m_positions.clear();
-    m_positions.shrink_to_fit();
-    m_attributes.clear();
-    m_attributes.shrink_to_fit();
-    m_colors.clear();
-    m_colors.shrink_to_fit();
-    m_indices.clear();
-    m_indices.shrink_to_fit();
-
-    m_uploaded = true;
-    return true;
+const Mesh &GeometryStore::mesh(uint32_t meshId) const
+{
+    if (meshId == 0 || meshId > m_meshes.size() || !m_meshes[meshId - 1].alive) {
+        core::fatal(std::format("GeometryStore::mesh: mesh {} is not alive", meshId));
+    }
+    return m_meshes[meshId - 1].mesh;
 }

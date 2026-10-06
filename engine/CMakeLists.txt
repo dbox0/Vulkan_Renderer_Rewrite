@@ -1,6 +1,8 @@
-add_library(core INTERFACE
-        core/Hash.h)
-target_include_directories(core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+add_library(core STATIC
+        core/Hash.h
+        core/RangeAllocator.cpp
+        core/RangeAllocator.h)
+target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(core INTERFACE cxx_std_20)
 
 add_library(gfx STATIC
@@ -45,6 +47,7 @@ enable_warnings(render)
 
 # The loader writes straight into the render stores for now.
 add_library(assets STATIC
-    assets/GltfLoader.cpp)
+    assets/GltfLoader.cpp
+       )
 target_link_libraries(assets PUBLIC render scene PRIVATE third_party)
 enable_warnings(assets)

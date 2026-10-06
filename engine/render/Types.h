@@ -3,6 +3,8 @@
 #include <vector>
 #include <glm/detail/type_quat.hpp>
 #include <string>
+
+#include "core/RangeAllocator.h"
 #include "gfx/Vk.h"
 #include "shared/GpuTypes.h"
 
@@ -10,7 +12,18 @@ struct SubMesh;
 
 struct Mesh
 {
+    std::string          name;
+    std::vector<SubMesh> subMeshes;
+    core::Range          vertices;
+    core::Range          indices;
+};
+
+struct MeshData {
     std::string name;
+    std::vector<glm::vec3> positions;
+    std::vector<VertexAttributes> attributes;
+    std::vector<uint32_t> colors;
+    std::vector<uint32_t> indices;
     std::vector<SubMesh> subMeshes;
 };
 
@@ -36,3 +49,4 @@ struct Texture
     uint32_t imageId = 0;
     uint32_t samplerId = 0;
 };
+
