@@ -191,14 +191,14 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
     const std::vector<uint32_t> samplerIds  = loadSamplers(model);
     const std::vector<uint32_t> textureIds  = loadTextures(model, imageIds, samplerIds);
     const std::vector<uint32_t> materialIds = loadMaterials(model, textureIds);
-    const std::vector<uint32_t> meshIds     = loadMeshes(model, materialIds);
+    const std::vector<MeshHandle> meshes    = loadMeshes(model, materialIds);
 
     // Scene nodes.
     const int sceneIndex = model.default_scene != -1 ? model.default_scene : 0;
     const tg3_scene *scene = &model.scenes[sceneIndex];
 
     for (uint32_t i = 0; i < scene->nodes_count; ++i) {
-        const uint32_t nodeId = importNode(model, scene->nodes[i], 0, 0, meshIds);
+        const uint32_t nodeId = importNode(model, scene->nodes[i], 0, 0, meshes);
         m_scene.addRootNode(nodeId);
     }
 
@@ -210,7 +210,7 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
 
 uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
                                 uint32_t parentId, uint32_t prevSiblingId,
-                                const std::vector<uint32_t> &meshIds)
+                                const std::vector<MeshHandle> &meshes)
 {
     const tg3_node &tg3Node = model.nodes[nodeIndex];
 
@@ -242,8 +242,8 @@ uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
             node.setScale(scale);
         }
 
-        if (tg3Node.mesh != -1 && static_cast<size_t>(tg3Node.mesh) < meshIds.size()) {
-            node.meshId = meshIds[tg3Node.mesh];
+        if (tg3Node.mesh != -1 && static_cast<size_t>(tg3Node.mesh) < meshes.size()) {
+            node.mesh = meshes[tg3Node.mesh];
         }
     }
 
@@ -254,7 +254,7 @@ uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
     uint32_t lastChildId  = 0;
     uint32_t firstChildId = 0;
     for (uint32_t i = 0; i < tg3Node.children_count; ++i) {
-        lastChildId = importNode(model, tg3Node.children[i], nodeId, lastChildId, meshIds);
+        lastChildId = importNode(model, tg3Node.children[i], nodeId, lastChildId, meshes);
         if (!firstChildId) {
             firstChildId = lastChildId;
         }
@@ -269,10 +269,10 @@ uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
 // meshes
 
 
-std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
-                                             const std::vector<uint32_t> &materialIds)
+std::vector<MeshHandle> GltfLoader::loadMeshes(const tg3_model &model,
+                                               const std::vector<uint32_t> &materialIds)
 {
-    std::vector<uint32_t> meshIds(model.meshes_count);
+    std::vector<MeshHandle> meshes(model.meshes_count);
     const VertexAttributes defaultAttributes{ .normal = encodeNormal(DefaultNormal), .uv = glm::vec2(0.0f) };
 
     for (uint32_t i = 0; i < model.meshes_count; ++i) {
@@ -368,15 +368,15 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                 .vertexCount = static_cast<uint32_t>(vertexCount),
                 .indexStart  = static_cast<uint32_t>(indexStart),
                 .indexCount  = static_cast<uint32_t>(data.indices.size() - indexStart),
-                .materialId  = materialId
+                .materialIndex = m_resources.materialShaderIndex(materialId)
             });
         }
 
         if (!data.subMeshes.empty()) {
-            meshIds[i] = m_geometry.addMesh(data);
+            meshes[i] = m_geometry.addMesh(data);
         }
     }
-    return meshIds;
+    return meshes;
 }
 
 // materials / textures / samplers / images

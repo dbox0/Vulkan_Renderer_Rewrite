@@ -50,6 +50,7 @@ public:
     // Converts a 1-based texture ID to the 0-based descriptor array slot the
     // shader uses. Returns the fallback slot for id 0 or out-of-range.
     uint32_t textureDescriptorSlot(uint32_t textureId) const;
+    uint32_t materialShaderIndex(uint32_t materialId) const { return materialId ? materialId - 1 : 0; }
     uint32_t samplerDescriptorSlot(uint32_t textureId) const;
 
     const gfx::Buffer &buffer(uint32_t bufferId) const { return m_buffers[bufferId - 1]; }

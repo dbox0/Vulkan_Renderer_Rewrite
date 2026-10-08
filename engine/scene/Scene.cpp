@@ -31,28 +31,23 @@ void Scene::collectDrawItems(std::vector<DrawItem> &out)
     out.clear();
     m_traversalStack.clear();
 
-    uint32_t nodeId = m_rootNodeId;
-    while (nodeId) {
-        Node &node = m_nodeWorld.getNode(nodeId);
-        m_traversalStack.push_back({ &node, glm::mat4(1.0f) });
-        nodeId = node.nextSiblingId;
+    for (uint32_t rootId = m_rootNodeId; rootId; rootId = m_nodeWorld.getNode(rootId).nextSiblingId) {
+        m_traversalStack.push_back({ rootId, glm::mat4(1.0f) });
     }
 
     while (!m_traversalStack.empty()) {
-        auto [node, parentTransform] = m_traversalStack.back();
+        const auto [nodeId, parentTransform] = m_traversalStack.back();
         m_traversalStack.pop_back();
 
-        const glm::mat4 matWorld = parentTransform * node->getTransform();
+        Node &node = m_nodeWorld.getNode(nodeId);
+        const glm::mat4 matWorld = parentTransform * node.getTransform();
 
-        if (node->meshId) {
-            out.push_back(DrawItem{ node->meshId, matWorld });
+        if (node.mesh.valid()) {
+            out.push_back(DrawItem{ .mesh = node.mesh, .nodeId = nodeId, .worldMatrix = matWorld });
         }
 
-        uint32_t childNodeId = node->firstChildId;
-        while (childNodeId) {
-            Node &child = m_nodeWorld.getNode(childNodeId);
-            m_traversalStack.push_back({ &child, matWorld });
-            childNodeId = child.nextSiblingId;
+        for (uint32_t childId = node.firstChildId; childId; childId = m_nodeWorld.getNode(childId).nextSiblingId) {
+            m_traversalStack.push_back({ childId, matWorld });
         }
     }
 }

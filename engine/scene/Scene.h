@@ -9,8 +9,8 @@
 struct DrawItem
 {
     MeshHandle mesh;
-    uint32_t  meshId = 0;
-    glm::mat4 worldMatrix{1.0f};
+    uint32_t   nodeId = 0;
+    glm::mat4  worldMatrix{1.0f};
 };
 
 class Scene

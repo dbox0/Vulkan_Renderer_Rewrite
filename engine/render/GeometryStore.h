@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "Types.h"
+#include "core/Handle.h"
 #include "core/RangeAllocator.h"
 #include "gfx/Resources.h"
 
@@ -22,11 +23,11 @@ public:
     void init();
     void shutdown();
 
-    uint32_t addMesh(const MeshData &data);
-    void     removeMesh(uint32_t meshId);
-    void     clear();
+    MeshHandle addMesh(const MeshData &data);
+    void       removeMesh(MeshHandle handle);
+    void       clear();
 
-    const Mesh &mesh(uint32_t meshId) const;
+    const Mesh *get(MeshHandle handle) const;
     size_t      liveMeshCount() const { return m_liveMeshes; }
 
     const core::RangeAllocator &vertexAllocator() const { return m_vertexAlloc; }
@@ -38,10 +39,11 @@ public:
     VkBuffer indexBuffer()       const { return m_indexBuffer.buffer; }
 
 private:
-    struct StoredMesh
+    struct Slot
     {
-        Mesh mesh;
-        bool alive = false;
+        Mesh     mesh;
+        uint32_t generation = 0;
+        bool     alive      = false;
     };
 
     gfx::Context         &m_ctx;
@@ -49,7 +51,8 @@ private:
 
     core::RangeAllocator    m_vertexAlloc{ MaxVertices };
     core::RangeAllocator    m_indexAlloc{ MaxIndices };
-    std::vector<StoredMesh> m_meshes;
+    std::vector<Slot>       m_slots;
+    std::vector<uint32_t>   m_freeSlots;
     size_t                  m_liveMeshes = 0;
 
     gfx::Buffer m_positionBuffer;

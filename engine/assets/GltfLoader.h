@@ -3,7 +3,8 @@
 #include <vector>
 #include <cstdint>
 
-// tiny_gltf_v3.h is included ONLY in GltfLoader.cpp.
+#include "core/Handle.h"
+
 struct tg3_model;
 
 namespace gfx { class Context; }
@@ -35,12 +36,12 @@ private:
                                        const std::vector<uint32_t> &samplerIds);
     std::vector<uint32_t> loadMaterials(const tg3_model &model,
                                         const std::vector<uint32_t> &textureIds);
-    std::vector<uint32_t> loadMeshes(const tg3_model &model,
-                                     const std::vector<uint32_t> &materialIds);
+    std::vector<MeshHandle> loadMeshes(const tg3_model &model,
+                                       const std::vector<uint32_t> &materialIds);
 
     uint32_t importNode(const tg3_model &model, int32_t nodeIndex,
                         uint32_t parentId, uint32_t prevSiblingId,
-                        const std::vector<uint32_t> &meshIds);
+                        const std::vector<MeshHandle> &meshes);
 
     gfx::Context  &m_ctx;
     ResourceStore &m_resources;

@@ -129,7 +129,9 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &vi
 
    DrawList draws;
     for (const DrawItem &item : m_drawItems) {
-        draws.count += static_cast<uint32_t>(m_geometry.mesh(item.meshId).subMeshes.size());
+        if (const Mesh *mesh = m_geometry.get(item.mesh)) {
+            draws.count += static_cast<uint32_t>(mesh->subMeshes.size());
+        }
     }
     if (draws.count == 0) {
         return draws;
@@ -141,7 +143,11 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &vi
 
     uint32_t i = 0;
     for (const DrawItem &item : m_drawItems) {
-        for (const SubMesh &subMesh : m_geometry.mesh(item.meshId).subMeshes) {
+        const Mesh *mesh = m_geometry.get(item.mesh);
+        if (!mesh) {
+            continue;
+        }
+        for (const SubMesh &subMesh : mesh->subMeshes) {
             commands[i] = VkDrawIndexedIndirectCommand
             {
                 .indexCount = subMesh.indexCount,
@@ -153,7 +159,7 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &vi
             items[i] = RenderItem
             {
                 .worldMatrix = item.worldMatrix,
-                .materialIndex = subMesh.materialId ? subMesh.materialId - 1 : 0
+                .materialIndex = subMesh.materialIndex
             };
             ++i;
         }

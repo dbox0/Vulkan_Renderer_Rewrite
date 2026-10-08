@@ -52,7 +52,7 @@ void GeometryStore::shutdown()
     m_indexBuffer     = {};
 }
 
-uint32_t GeometryStore::addMesh(const MeshData &data)
+MeshHandle GeometryStore::addMesh(const MeshData &data)
 {
     const uint64_t vertexCount = data.positions.size();
     const uint64_t indexCount  = data.indices.size();
@@ -63,19 +63,19 @@ uint32_t GeometryStore::addMesh(const MeshData &data)
     }
     if (vertexCount == 0 || indexCount == 0) {
         core::warn(std::format("Mesh '{}' skipped: {} vertices, {} indices", data.name, vertexCount, indexCount));
-        return 0;
+        return {};
     }
 
     const std::optional<uint64_t> vertexOffset = m_vertexAlloc.allocate(vertexCount);
     if (!vertexOffset) {
         warnFull(data.name, "vertices", m_vertexAlloc, vertexCount);
-        return 0;
+        return {};
     }
     const std::optional<uint64_t> indexOffset = m_indexAlloc.allocate(indexCount);
     if (!indexOffset) {
         m_vertexAlloc.free(*vertexOffset, vertexCount);
         warnFull(data.name, "indices", m_indexAlloc, indexCount);
-        return 0;
+        return {};
     }
 
     m_uploader.uploadBuffer(m_positionBuffer, *vertexOffset * sizeof(glm::vec3),
@@ -101,45 +101,61 @@ uint32_t GeometryStore::addMesh(const MeshData &data)
         subMesh.indexStart  += indexBase;
     }
 
-    m_meshes.push_back(StoredMesh{ .mesh = std::move(mesh), .alive = true });
+    uint32_t index = 0;
+    if (!m_freeSlots.empty()) {
+        index = m_freeSlots.back();
+        m_freeSlots.pop_back();
+    } else {
+        index = static_cast<uint32_t>(m_slots.size());
+        m_slots.emplace_back();
+    }
+
+    Slot &slot = m_slots[index];
+    slot.mesh  = std::move(mesh);
+    slot.alive = true;
     ++m_liveMeshes;
-    return static_cast<uint32_t>(m_meshes.size());
+    return MeshHandle{ .index = index, .generation = slot.generation };
 }
 
-void GeometryStore::removeMesh(uint32_t meshId)
+void GeometryStore::removeMesh(MeshHandle handle)
 {
-    if (meshId == 0 || meshId > m_meshes.size() || !m_meshes[meshId - 1].alive) {
-        core::warn(std::format("GeometryStore::removeMesh: mesh {} is not alive", meshId));
+    if (!get(handle)) {
+        core::warn(std::format("GeometryStore::removeMesh: handle {{{}, {}}} is stale", handle.index, handle.generation));
         return;
     }
 
-    StoredMesh &stored = m_meshes[meshId - 1];
-    stored.alive = false;
+    Slot &slot = m_slots[handle.index];
+    slot.alive = false;
+    ++slot.generation;
     --m_liveMeshes;
 
-    const core::Range vertices = stored.mesh.vertices;
-    const core::Range indices  = stored.mesh.indices;
-    m_ctx.retire([this, vertices, indices] {
+    const uint32_t    index    = handle.index;
+    const core::Range vertices = slot.mesh.vertices;
+    const core::Range indices  = slot.mesh.indices;
+    m_ctx.retire([this, index, vertices, indices] {
         m_vertexAlloc.free(vertices.offset, vertices.count);
         m_indexAlloc.free(indices.offset, indices.count);
+        m_freeSlots.push_back(index);
     });
 }
 
 void GeometryStore::clear()
 {
-    for (size_t i = 0; i < m_meshes.size(); ++i) {
-        if (m_meshes[i].alive) {
-            removeMesh(static_cast<uint32_t>(i + 1));
+    for (uint32_t i = 0; i < m_slots.size(); ++i) {
+        if (m_slots[i].alive) {
+            removeMesh(MeshHandle{ .index = i, .generation = m_slots[i].generation });
         }
     }
-    m_meshes.clear();
-    m_liveMeshes = 0;
 }
 
-const Mesh &GeometryStore::mesh(uint32_t meshId) const
+const Mesh *GeometryStore::get(MeshHandle handle) const
 {
-    if (meshId == 0 || meshId > m_meshes.size() || !m_meshes[meshId - 1].alive) {
-        core::fatal(std::format("GeometryStore::mesh: mesh {} is not alive", meshId));
+    if (handle.index >= m_slots.size()) {
+        return nullptr;
     }
-    return m_meshes[meshId - 1].mesh;
+    const Slot &slot = m_slots[handle.index];
+    if (!slot.alive || slot.generation != handle.generation) {
+        return nullptr;
+    }
+    return &slot.mesh;
 }

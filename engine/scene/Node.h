@@ -19,7 +19,6 @@ class Node
 
 public:
     MeshHandle mesh;
-    uint32_t meshId         = 0;
     uint32_t parentId       = 0;
     uint32_t nextSiblingId  = 0;
     uint32_t firstChildId   = 0;
