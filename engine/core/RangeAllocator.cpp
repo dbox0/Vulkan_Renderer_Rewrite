@@ -1,13 +1,14 @@
 #include "RangeAllocator.h"
-
 #include <format>
-
 #include "Log.h"
+#include <algorithm>
+#include <iterator>
 
 namespace core {
     RangeAllocator::RangeAllocator(uint64_t capacity) {
         m_capacity = capacity;
         m_used = 0;
+        m_free.emplace(0,capacity);
     }
 
     void RangeAllocator::free(uint64_t offset, uint64_t count) {
@@ -22,7 +23,7 @@ namespace core {
         auto prev = next != m_free.begin() ? std::prev(next) : m_free.end();
 
         if(prev != m_free.end() && prev->first + prev->second > offset){
-           fatal(std::format("RangeAllocator::free: [{}, {}) overlaps free range [{}.{})",
+           fatal(std::format("RangeAllocator::free: [{}, {}) overlaps free range [{}, {})",
                offset, end, prev->first, prev->first + prev->second));
         }
         if (next != m_free.end() && next->first < end) {
@@ -77,6 +78,7 @@ namespace core {
                     uint64_t remainingSize = size - count;
                     m_free[remainingOffset] = remainingSize;
                 }
+                m_used += count;
                 return offset;
             }
         }

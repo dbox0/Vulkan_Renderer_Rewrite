@@ -1,7 +1,7 @@
 #pragma once
 #include <map>
 #include <optional>
-#include <glm/fwd.hpp>
+#include <cstdint>
 
 
 namespace core {
@@ -17,7 +17,7 @@ namespace core {
 
         std::optional<uint64_t> allocate(uint64_t count);
 
-        
+
         void free(uint64_t offset, uint64_t count);
 
         uint64_t capacity() const {return m_capacity;}
