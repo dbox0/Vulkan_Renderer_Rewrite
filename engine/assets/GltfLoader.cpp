@@ -5,6 +5,7 @@
 #include <cstring>
 #include <format>
 #include <iostream>
+#include <numeric>
 #include <tuple>
 #include <unordered_map>
 
@@ -24,6 +25,7 @@ namespace
 {
 
 const glm::vec3 DefaultNormal(0.0f, 1.0f, 0.0f);
+constexpr uint32_t White = 0xFFFFFFFFu;
 
 float readComponent(const unsigned char *src, int32_t componentType, bool normalized)
 {
@@ -83,6 +85,45 @@ glm::vec4 readElement(const tg3_model &model, const tg3_accessor &accessor, uint
         result[c] = readComponent(element + c * componentSize, accessor.component_type, accessor.normalized != 0);
     }
     return result;
+}
+
+const tg3_accessor *findAttribute(const tg3_model &model, const tg3_primitive &primitive, const char *name)
+{
+    for (uint32_t a = 0; a < primitive.attributes_count; ++a) {
+        if (std::strcmp(primitive.attributes[a].key.data, name) == 0) {
+            return &model.accessors[primitive.attributes[a].value];
+        }
+    }
+    return nullptr;
+}
+
+bool readIndices(const tg3_model &model, const tg3_accessor &accessor, uint32_t *dst)
+{
+    if (accessor.buffer_view < 0) {
+        return false;
+    }
+    const tg3_buffer_view &view = model.buffer_views[accessor.buffer_view];
+    const unsigned char *src = model.buffers[view.buffer].data.data + view.byte_offset + accessor.byte_offset;
+
+    switch (accessor.component_type) {
+    case TG3_COMPONENT_TYPE_UNSIGNED_INT:
+        std::memcpy(dst, src, accessor.count * sizeof(uint32_t));
+        return true;
+    case TG3_COMPONENT_TYPE_UNSIGNED_SHORT:
+        for (uint64_t i = 0; i < accessor.count; ++i) {
+            uint16_t value = 0;
+            std::memcpy(&value, src + i * sizeof(uint16_t), sizeof(value));
+            dst[i] = value;
+        }
+        return true;
+    case TG3_COMPONENT_TYPE_UNSIGNED_BYTE:
+        for (uint64_t i = 0; i < accessor.count; ++i) {
+            dst[i] = src[i];
+        }
+        return true;
+    default:
+        return false;
+    }
 }
 
 glm::vec2 octEncode(glm::vec3 n)
@@ -232,104 +273,108 @@ std::vector<uint32_t> GltfLoader::loadMeshes(const tg3_model &model,
                                              const std::vector<uint32_t> &materialIds)
 {
     std::vector<uint32_t> meshIds(model.meshes_count);
+    const VertexAttributes defaultAttributes{ .normal = encodeNormal(DefaultNormal), .uv = glm::vec2(0.0f) };
 
     for (uint32_t i = 0; i < model.meshes_count; ++i) {
-        Mesh mesh;
         const tg3_mesh *tg3mesh = &model.meshes[i];
-        mesh.name = tg3mesh->name.data != nullptr ? tg3mesh->name.data : "Unnamed mesh";
 
-        mesh.subMeshes.resize(tg3mesh->primitives_count);
+        MeshData data;
+        data.name = tg3mesh->name.data != nullptr ? tg3mesh->name.data : "Unnamed mesh";
+        data.subMeshes.reserve(tg3mesh->primitives_count);
+
+        size_t totalVertices = 0;
+        size_t totalIndices  = 0;
+        for (uint32_t u = 0; u < tg3mesh->primitives_count; ++u) {
+            const tg3_primitive &primitive = tg3mesh->primitives[u];
+            if (const tg3_accessor *positions = findAttribute(model, primitive, "POSITION")) {
+                totalVertices += positions->count;
+                totalIndices  += primitive.indices != -1 ? model.accessors[primitive.indices].count : positions->count;
+            }
+        }
+        data.positions.reserve(totalVertices);
+        data.attributes.reserve(totalVertices);
+        data.colors.reserve(totalVertices);
+        data.indices.reserve(totalIndices);
 
         for (uint32_t u = 0; u < tg3mesh->primitives_count; ++u) {
-            const tg3_primitive *primitive = &tg3mesh->primitives[u];
-            SubMesh &subMesh = mesh.subMeshes[u];
+            const tg3_primitive &primitive = tg3mesh->primitives[u];
 
-            // primitive->material is -1 for the glTF default material.
-            subMesh.materialId =
-                (primitive->material != -1 && static_cast<size_t>(primitive->material) < materialIds.size())
-                    ? materialIds[primitive->material]
-                    : 0;
-
-            const tg3_accessor *positionAccessor = nullptr;
-            for (uint32_t v = 0; v < primitive->attributes_count; ++v) {
-                const tg3_str_int_pair *attr = &primitive->attributes[v];
-                if (std::strcmp(attr->key.data, "POSITION") == 0) {
-                    positionAccessor = &model.accessors[attr->value];
-                    break;
-                }
-            }
-            if (!positionAccessor) {
-                core::warn("glTF primitive has no POSITION attribute; skipping");
+            const tg3_accessor *positionAccessor = findAttribute(model, primitive, "POSITION");
+            if (!positionAccessor || positionAccessor->count == 0) {
+                core::warn(std::format("glTF mesh '{}' primitive {} has no positions; skipping", data.name, u));
                 continue;
             }
 
             const uint64_t vertexCount = positionAccessor->count;
-            subMesh.vertexCount = vertexCount;
-            subMesh.vertexStart = m_geometry.appendVertices(vertexCount);
-            const GeometryStore::VertexStreams streams = m_geometry.streamsAt(subMesh.vertexStart);
+            const size_t   vertexStart = data.positions.size();
+            const size_t   indexStart  = data.indices.size();
 
-            bool hasNormals = false;
-            for (uint32_t v = 0; v < primitive->attributes_count; ++v) {
-                const tg3_str_int_pair *attr = &primitive->attributes[v];
-                const tg3_accessor &accessor = model.accessors[attr->value];
+            data.positions.resize(vertexStart + vertexCount, glm::vec3(0.0f));
+            data.attributes.resize(vertexStart + vertexCount, defaultAttributes);
+            data.colors.resize(vertexStart + vertexCount, White);
+
+            glm::vec3        *positions  = data.positions.data() + vertexStart;
+            VertexAttributes *attributes = data.attributes.data() + vertexStart;
+            uint32_t         *colors     = data.colors.data() + vertexStart;
+
+            for (uint32_t v = 0; v < primitive.attributes_count; ++v) {
+                const tg3_str_int_pair &attr = primitive.attributes[v];
+                const tg3_accessor &accessor = model.accessors[attr.value];
                 const uint64_t count = std::min(accessor.count, vertexCount);
 
-                if (std::strcmp(attr->key.data, "POSITION") == 0) {
+                if (std::strcmp(attr.key.data, "POSITION") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
-                        streams.positions[vi] = glm::vec3(readElement(model, accessor, vi));
+                        positions[vi] = glm::vec3(readElement(model, accessor, vi));
                     }
-                } else if (std::strcmp(attr->key.data, "NORMAL") == 0) {
-                    hasNormals = true;
+                } else if (std::strcmp(attr.key.data, "NORMAL") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
-                        streams.attributes[vi].normal = encodeNormal(glm::vec3(readElement(model, accessor, vi)));
+                        attributes[vi].normal = encodeNormal(glm::vec3(readElement(model, accessor, vi)));
                     }
-                } else if (std::strcmp(attr->key.data, "TEXCOORD_0") == 0) {
+                } else if (std::strcmp(attr.key.data, "TEXCOORD_0") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
-                        streams.attributes[vi].uv = glm::vec2(readElement(model, accessor, vi));
+                        attributes[vi].uv = glm::vec2(readElement(model, accessor, vi));
                     }
-                } else if (std::strcmp(attr->key.data, "COLOR_0") == 0) {
+                } else if (std::strcmp(attr.key.data, "COLOR_0") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
-                        streams.colors[vi] = glm::packUnorm4x8(glm::clamp(readElement(model, accessor, vi), 0.0f, 1.0f));
+                        colors[vi] = glm::packUnorm4x8(glm::clamp(readElement(model, accessor, vi), 0.0f, 1.0f));
                     }
                 }
             }
 
-            if (!hasNormals) {
-                const uint32_t defaultNormal = encodeNormal(DefaultNormal);
-                for (uint64_t vi = 0; vi < vertexCount; ++vi) {
-                    streams.attributes[vi].normal = defaultNormal;
+            if (primitive.indices != -1) {
+                const tg3_accessor &accessor = model.accessors[primitive.indices];
+                data.indices.resize(indexStart + accessor.count);
+                if (!readIndices(model, accessor, data.indices.data() + indexStart)) {
+                    core::warn(std::format("glTF mesh '{}' primitive {} has unsupported indices; skipping", data.name, u));
+                    data.positions.resize(vertexStart);
+                    data.attributes.resize(vertexStart);
+                    data.colors.resize(vertexStart);
+                    data.indices.resize(indexStart);
+                    continue;
                 }
+            } else {
+                data.indices.resize(indexStart + vertexCount);
+                std::iota(data.indices.begin() + static_cast<std::ptrdiff_t>(indexStart), data.indices.end(), 0u);
             }
 
-            if (primitive->indices != -1) {
-                const tg3_accessor    *accessor    = &model.accessors[primitive->indices];
-                const tg3_buffer_view *buffer_view = &model.buffer_views[accessor->buffer_view];
-                const tg3_buffer      *buffer      = &model.buffers[buffer_view->buffer];
+            const uint32_t materialId =
+                (primitive.material != -1 && static_cast<size_t>(primitive.material) < materialIds.size())
+                    ? materialIds[primitive.material]
+                    : 0;
 
-                subMesh.indexCount = accessor->count;
-                subMesh.indexStart = m_geometry.appendIndices(accessor->count);
-
-                const unsigned char *src = buffer->data.data + buffer_view->byte_offset + accessor->byte_offset;
-                uint32_t *dst = m_geometry.indexAt(subMesh.indexStart);
-
-                if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT) {
-                    std::memcpy(dst, src, accessor->count * sizeof(uint32_t));
-                } else if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) {
-                    const uint16_t *src16 = reinterpret_cast<const uint16_t *>(src);
-                    for (uint64_t idx = 0; idx < accessor->count; ++idx) {
-                        dst[idx] = static_cast<uint32_t>(src16[idx]);
-                    }
-                } else if (accessor->component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
-                    for (uint64_t idx = 0; idx < accessor->count; ++idx) {
-                        dst[idx] = static_cast<uint32_t>(src[idx]);
-                    }
-                } else {
-                    core::warn("Unsupported glTF index component type");
-                }
-            }
+            data.subMeshes.push_back(SubMesh
+            {
+                .vertexStart = static_cast<uint32_t>(vertexStart),
+                .vertexCount = static_cast<uint32_t>(vertexCount),
+                .indexStart  = static_cast<uint32_t>(indexStart),
+                .indexCount  = static_cast<uint32_t>(data.indices.size() - indexStart),
+                .materialId  = materialId
+            });
         }
 
-        meshIds[i] = m_geometry.addMesh(std::move(mesh));
+        if (!data.subMeshes.empty()) {
+            meshIds[i] = m_geometry.addMesh(data);
+        }
     }
     return meshIds;
 }

@@ -56,13 +56,13 @@ void Application::init()
     m_renderer.init(shaderDirectory(base), cacheDir);
 
     m_scene.initialize(MaxNodes);
-    m_geometry.reserve(MaxVertices, MaxIndices);
+    m_geometry.init();
 }
 
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
     m_scene.clear();
-    m_geometry.reset();
+    m_geometry.clear();
     m_resources.clearModelData();
 
     GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
@@ -73,14 +73,16 @@ bool Application::loadData(const std::filesystem::path &modelPath)
 
 
     // Each of these commits a snapshot of a store to the GPU, so they run after ALL loading.
-    if (!m_geometry.uploadToGpu()) {
-        return false;
-    }
     m_resources.updateTextureDescriptors();
     m_resources.uploadMaterialBuffer();
 
     m_uploader.flush();
-    core::log(std::format("Loaded {} meshes, {} materials", m_geometry.meshCount(), m_resources.materialCount()));
+    core::log(std::format("Loaded {} meshes, {} materials", m_geometry.liveMeshCount(), m_resources.materialCount()));
+    const core::RangeAllocator &vertices = m_geometry.vertexAllocator();
+    const core::RangeAllocator &indices  = m_geometry.indexAllocator();
+    core::log(std::format("Geometry: {} of {} vertices used (largest free {}), {} of {} indices used (largest free {})",
+                          vertices.used(), vertices.capacity(), vertices.largestFree(),
+                          indices.used(), indices.capacity(), indices.largestFree()));
     return true;
 }
 

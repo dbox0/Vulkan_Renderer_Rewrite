@@ -8,7 +8,14 @@
 #include "gfx/Vk.h"
 #include "shared/GpuTypes.h"
 
-struct SubMesh;
+struct SubMesh
+{
+    uint32_t vertexStart = 0;
+    uint32_t vertexCount = 0;
+    uint32_t indexStart  = 0;
+    uint32_t indexCount  = 0;
+    uint32_t materialId  = 0;
+};
 
 struct Mesh
 {
@@ -25,15 +32,6 @@ struct MeshData {
     std::vector<uint32_t> colors;
     std::vector<uint32_t> indices;
     std::vector<SubMesh> subMeshes;
-};
-
-struct SubMesh
-{
-    size_t vertexStart = 0;
-    size_t vertexCount = 0;
-    size_t indexStart = 0;
-    size_t indexCount = 0;
-    uint32_t materialId = 0;
 };
 
 struct Image   // decoded pixels in RAM

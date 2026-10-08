@@ -225,7 +225,7 @@ void Editor::drawScenePanel()
     ImGui::TextDisabled("or drop a file on the window");
 
     ImGui::SeparatorText("Model");
-    ImGui::Text("%zu meshes, %zu materials", m_app->geometry().meshCount(), m_app->resources().materialCount());
+    ImGui::Text("%zu meshes, %zu materials", m_app->geometry().liveMeshCount(), m_app->resources().materialCount());
 
     Scene &scene = m_app->scene();
     if (const uint32_t rootId = scene.rootNodeId()) {

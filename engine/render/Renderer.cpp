@@ -144,9 +144,9 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &vi
         for (const SubMesh &subMesh : m_geometry.mesh(item.meshId).subMeshes) {
             commands[i] = VkDrawIndexedIndirectCommand
             {
-                .indexCount = static_cast<uint32_t>(subMesh.indexCount),
+                .indexCount = subMesh.indexCount,
                 .instanceCount = 1,
-                .firstIndex = static_cast<uint32_t>(subMesh.indexStart),
+                .firstIndex = subMesh.indexStart,
                 .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
                 .firstInstance = i
             };
@@ -205,11 +205,8 @@ void Renderer::render(Scene &scene, const Camera &camera)
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
 
 
-    DrawList draws;
-    if (m_geometry.uploaded()) {
-        scene.collectDrawItems(m_drawItems);
-        draws = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
-    }
+    scene.collectDrawItems(m_drawItems);
+    const DrawList draws = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
 
     const PushConstants pc {frameAlloc.address, draws.items.address};
 
