@@ -8,6 +8,7 @@
 // A node with a mesh at its world transform. The renderer expands it into one draw per submesh.
 struct DrawItem
 {
+    MeshHandle mesh;
     uint32_t  meshId = 0;
     glm::mat4 worldMatrix{1.0f};
 };
@@ -32,6 +33,5 @@ private:
     uint32_t  m_rootNodeId     = 0;
     uint32_t  m_lastRootNodeId = 0;
 
-    // Kept as a member so traversal doesn't reallocate every frame.
-    std::vector<std::pair<Node *, glm::mat4>> m_traversalStack;
+    std::vector<std::pair<uint32_t, glm::mat4>> m_traversalStack;
 };

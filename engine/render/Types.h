@@ -10,11 +10,14 @@
 
 struct SubMesh
 {
-    uint32_t vertexStart = 0;
-    uint32_t vertexCount = 0;
-    uint32_t indexStart  = 0;
-    uint32_t indexCount  = 0;
-    uint32_t materialId  = 0;
+    uint32_t  vertexStart   = 0;
+    uint32_t  vertexCount   = 0;
+    uint32_t  indexStart    = 0;
+    uint32_t  indexCount    = 0;
+    uint32_t  materialIndex = 0;
+    glm::vec4 sphere{ 0.0f };
+    glm::vec3 aabbMin{ 0.0f };
+    glm::vec3 aabbMax{ 0.0f };
 };
 
 struct Mesh
@@ -23,6 +26,7 @@ struct Mesh
     std::vector<SubMesh> subMeshes;
     core::Range          vertices;
     core::Range          indices;
+    core::Range          table;
 };
 
 struct MeshData {

@@ -6,6 +6,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include "core/Handle.h"
+
+
 class Node
 {
     glm::vec3 m_translation = glm::vec3(0,0,0);
@@ -15,6 +18,7 @@ class Node
     bool m_dirty = true;
 
 public:
+    MeshHandle mesh;
     uint32_t meshId         = 0;
     uint32_t parentId       = 0;
     uint32_t nextSiblingId  = 0;

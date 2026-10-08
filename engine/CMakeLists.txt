@@ -1,7 +1,8 @@
 add_library(core STATIC
         core/Hash.h
         core/RangeAllocator.cpp
-        core/RangeAllocator.h)
+        core/RangeAllocator.h
+        core/Handle.h)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(core PUBLIC cxx_std_20)
 
