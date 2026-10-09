@@ -83,7 +83,8 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthTest = true,
         .depthWrite = true,
-        .depthCompare = VK_COMPARE_OP_LESS
+        .depthCompare = VK_COMPARE_OP_LESS,
+        .dynamicFrontFace = true
     });
 }
 
@@ -124,44 +125,63 @@ void Renderer::resizeDepthIfNeeded()
     m_depth = m_ctx.createImage(extent, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, "depth");
 }
 
-Renderer::DrawList Renderer::writeDrawCommands(Frame &frame, const glm::mat4 &viewProj)
+Renderer::DrawList Renderer::writeDrawCommands(Frame &frame)
 {
+    const auto isMirrored = [](const glm::mat4 &world) {
+        return glm::determinant(glm::mat3(world)) < 0.0f;
+    };
 
-   DrawList draws;
+    DrawList draws;
+    uint32_t mirroredCount = 0;
     for (const DrawItem &item : m_drawItems) {
         if (const Mesh *mesh = m_geometry.get(item.mesh)) {
-            draws.count += static_cast<uint32_t>(mesh->subMeshes.size());
+            const auto subMeshCount = static_cast<uint32_t>(mesh->subMeshes.size());
+            draws.count += subMeshCount;
+            if (isMirrored(item.worldMatrix)) {
+                mirroredCount += subMeshCount;
+            }
         }
     }
     if (draws.count == 0) {
         return draws;
     }
-    draws.commands = frame.arena.allocate(draws.count * sizeof(VkDrawIndexedIndirectCommand));
-    draws.items    = frame.arena.allocate(draws.count * sizeof(RenderItem));
-    auto *commands = static_cast<VkDrawIndexedIndirectCommand *>(draws.commands.cpu);
-    auto *items    = static_cast<RenderItem *>(draws.items.cpu);
+    draws.firstMirrored = draws.count - mirroredCount;
 
-    uint32_t i = 0;
+    draws.commands  = frame.arena.allocate(draws.count * sizeof(VkDrawIndexedIndirectCommand));
+    draws.instances = frame.arena.allocate(draws.count * sizeof(Instance));
+    auto *commands  = static_cast<VkDrawIndexedIndirectCommand *>(draws.commands.cpu);
+    auto *instances = static_cast<Instance *>(draws.instances.cpu);
+
+    uint32_t normalSlot   = 0;
+    uint32_t mirroredSlot = draws.firstMirrored;
     for (const DrawItem &item : m_drawItems) {
         const Mesh *mesh = m_geometry.get(item.mesh);
         if (!mesh) {
             continue;
         }
-        for (const SubMesh &subMesh : mesh->subMeshes) {
-            commands[i] = VkDrawIndexedIndirectCommand
+
+        const glm::mat4   rows  = glm::transpose(item.worldMatrix);
+        const glm::mat3x4 world = glm::mat3x4(rows[0], rows[1], rows[2]);
+        const auto        firstTableEntry = static_cast<uint32_t>(mesh->table.offset);
+        uint32_t         &slot  = isMirrored(item.worldMatrix) ? mirroredSlot : normalSlot;
+
+        for (uint32_t u = 0; u < mesh->subMeshes.size(); ++u) {
+            const SubMesh &subMesh = mesh->subMeshes[u];
+            commands[slot] = VkDrawIndexedIndirectCommand
             {
                 .indexCount = subMesh.indexCount,
                 .instanceCount = 1,
                 .firstIndex = subMesh.indexStart,
                 .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
-                .firstInstance = i
+                .firstInstance = slot
             };
-            items[i] = RenderItem
+            instances[slot] = Instance
             {
-                .worldMatrix = item.worldMatrix,
-                .materialIndex = subMesh.materialIndex
+                .worldMatrix = world,
+                .subMesh = firstTableEntry + u,
+                .node = item.nodeId
             };
-            ++i;
+            ++slot;
         }
     }
     return draws;
@@ -207,14 +227,15 @@ void Renderer::render(Scene &scene, const Camera &camera)
     frameDataPtr->attributes     = m_geometry.attributesAddress();
     frameDataPtr->colors         = m_geometry.colorsAddress();
     frameDataPtr->materials      = m_resources.materialBufferAddress();
+    frameDataPtr->subMeshes      = m_geometry.subMeshesAddress();
     frameDataPtr->time           =  std::chrono::duration<float>(std::chrono::steady_clock::now() - m_startTime).count();
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
 
 
     scene.collectDrawItems(m_drawItems);
-    const DrawList draws = writeDrawCommands(frame, camera.viewProjection(aspectRatio));
+    const DrawList draws = writeDrawCommands(frame);
 
-    const PushConstants pc {frameAlloc.address, draws.items.address};
+    const PushConstants pc {frameAlloc.address, draws.instances.address};
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
     recordFrame(frame, imageIndex, draws, pc);
@@ -347,8 +368,17 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
 
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_scenePipeline));
             vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.count,
-                         sizeof(VkDrawIndexedIndirectCommand));
+
+            constexpr VkDeviceSize stride = sizeof(VkDrawIndexedIndirectCommand);
+            vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+            if (draws.firstMirrored > 0) {
+                vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.firstMirrored, stride);
+            }
+            if (draws.count > draws.firstMirrored) {
+                vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
+                vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset + draws.firstMirrored * stride,
+                                         draws.count - draws.firstMirrored, stride);
+            }
         }
 
         vkCmdEndRendering(cmd);

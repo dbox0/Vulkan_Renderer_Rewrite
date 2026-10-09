@@ -67,8 +67,9 @@ private:
     struct DrawList
     {
         uint32_t             count = 0;
+        uint32_t             firstMirrored = 0;
         gfx::ArenaAllocation commands;
-        gfx::ArenaAllocation items;
+        gfx::ArenaAllocation instances;
     };
 
     void createFrames();
@@ -76,7 +77,7 @@ private:
     void resizeDepthIfNeeded();
 
     // Fills this frame's indirect + render-item buffers. Returns the draw count written.
-    DrawList writeDrawCommands(Frame &frame, const glm::mat4 &viewProj);
+    DrawList writeDrawCommands(Frame &frame);
     void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc);
 
     gfx::Context   &m_ctx;

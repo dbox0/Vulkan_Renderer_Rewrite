@@ -37,9 +37,14 @@ layout(buffer_reference, scalar) readonly buffer MaterialPtr
     Material materials[];
 };
 
-layout(buffer_reference, scalar) readonly buffer RenderItemPtr
+layout(buffer_reference, scalar) readonly buffer InstancePtr
 {
-    RenderItem renderItems[];
+    Instance instances[];
+};
+
+layout(buffer_reference, scalar) readonly buffer SubMeshPtr
+{
+    SubMeshGpu subMeshes[];
 };
 
 layout (location = 0) out vec3 outColor;
@@ -66,12 +71,19 @@ void main()
     vec4 color = unpackUnorm4x8(ColorPtr(frame.data.colors).colors[gl_VertexIndex]);
     vec3 normal = octDecode(unpackSnorm2x16(attributes.normal));
 
-    RenderItem ri = RenderItemPtr(pc.draws).renderItems[gl_InstanceIndex];
-    Material material = MaterialPtr(frame.data.materials).materials[ri.materialIndex];
+    Instance instance = InstancePtr(pc.instances).instances[gl_InstanceIndex];
+    SubMeshGpu subMesh = SubMeshPtr(frame.data.subMeshes).subMeshes[instance.subMesh];
+    Material material = MaterialPtr(frame.data.materials).materials[subMesh.material];
 
-    gl_Position = frame.data.viewProj * ri.worldMatrix * vec4(position, 1.0);
+    vec3 worldPosition = vec4(position, 1.0) * instance.worldMatrix;
+
+    mat3 linear = transpose(mat3(instance.worldMatrix));
+    mat3 cofactor = mat3(cross(linear[1], linear[2]), cross(linear[2], linear[0]), cross(linear[0], linear[1]));
+    float mirror = sign(dot(linear[0], cross(linear[1], linear[2])));
+
+    gl_Position = frame.data.viewProj * vec4(worldPosition, 1.0);
     outColor = color.rgb;
-    outNormal = mat3x3(transpose(inverse(ri.worldMatrix))) * normal;
+    outNormal = mirror * (cofactor * normal);
     outUV = attributes.uv;
     outTextureIndex = material.textureIndex;
     outMaterialBaseColor = material.baseColor;

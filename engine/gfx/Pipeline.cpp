@@ -79,11 +79,11 @@ VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineD
         .pAttachments = blendAttachments.data()
     };
 
-    const std::array dynamicStates{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    const std::array dynamicStates{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_FRONT_FACE };
     const VkPipelineDynamicStateCreateInfo dynamic
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .dynamicStateCount = desc.dynamicFrontFace ? 3u : 2u,
         .pDynamicStates = dynamicStates.data()
     };
 

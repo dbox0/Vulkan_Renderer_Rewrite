@@ -23,6 +23,8 @@ struct GraphicsPipelineDesc
     bool        depthTest    = false;
     bool        depthWrite   = false;
     VkCompareOp depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL;
+
+    bool dynamicFrontFace = false;
 };
 
 

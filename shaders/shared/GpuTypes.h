@@ -10,6 +10,7 @@ using vec2 = glm::vec2;
 using vec3 = glm::vec3;
 using vec4 = glm::vec4;
 using mat4 = glm::mat4;
+using mat3x4 = glm::mat3x4;
 using uint = uint32_t;
 #endif
 
@@ -26,17 +27,27 @@ struct Material
     uint samplerIndex;
 };
 
-struct FrameData {
-    mat4        viewProj;
-    mat4        view;
-    mat4        proj;
-    vec4        cameraPosition;
-    uint64_t    positions;
-    uint64_t    attributes;
-    uint64_t    colors;
-    uint64_t    materials;
-    float       time;
-    uint        frameIndex;
+struct Instance {
+    mat3x4 worldMatrix;
+    uint subMesh;
+    uint node;
+    uint pad0;
+    uint pad1;
+};
+
+struct FrameData
+{
+    mat4     viewProj;
+    mat4     view;
+    mat4     proj;
+    vec4     cameraPosition;
+    uint64_t positions;
+    uint64_t attributes;
+    uint64_t colors;
+    uint64_t materials;
+    uint64_t subMeshes;
+    float    time;
+    uint     frameIndex;
 };
 
 struct SubMeshGpu
@@ -50,15 +61,9 @@ struct SubMeshGpu
     vec4 aabbMax;
 };
 
-struct RenderItem
-{
-    mat4 worldMatrix;
-    uint materialIndex;
-};
-
 struct PushConstants{
     uint64_t frame;
-    uint64_t draws;
+    uint64_t instances;
 };
 
 #ifdef __cplusplus
@@ -71,13 +76,14 @@ static_assert(offsetof(Material, baseColor) == 0);
 static_assert(offsetof(Material, textureIndex) == 16);
 static_assert(offsetof(Material, samplerIndex) == 20);
 
-static_assert(sizeof(FrameData) == 248);
+static_assert(sizeof(FrameData) == 256);
 static_assert(offsetof(FrameData, positions) == 208);
 static_assert(offsetof(FrameData, attributes) == 216);
 static_assert(offsetof(FrameData, colors) == 224);
 static_assert(offsetof(FrameData, materials) == 232);
-static_assert(offsetof(FrameData, time) == 240);
-static_assert(offsetof(FrameData, frameIndex) == 244);
+static_assert(offsetof(FrameData, subMeshes) == 240);
+static_assert(offsetof(FrameData, time) == 248);
+static_assert(offsetof(FrameData, frameIndex) == 252);
 
 static_assert(sizeof(SubMeshGpu) == 64);
 static_assert(offsetof(SubMeshGpu, firstIndex) == 0);
@@ -88,9 +94,10 @@ static_assert(offsetof(SubMeshGpu, sphere) == 16);
 static_assert(offsetof(SubMeshGpu, aabbMin) == 32);
 static_assert(offsetof(SubMeshGpu, aabbMax) == 48);
 
-static_assert(sizeof(RenderItem) == 68);
-static_assert(offsetof(RenderItem, worldMatrix) == 0);
-static_assert(offsetof(RenderItem, materialIndex) == 64);
+static_assert(sizeof(Instance) == 64);
+static_assert(offsetof(Instance, worldMatrix) == 0);
+static_assert(offsetof(Instance, subMesh) == 48);
+static_assert(offsetof(Instance, node) == 52);
 
 #endif
 
