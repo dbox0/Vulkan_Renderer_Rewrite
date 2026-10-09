@@ -9,6 +9,7 @@ option(BUILD_EDITOR "Build the ImGui editor (vulkaneditor)" ON)
 find_package(SDL3 REQUIRED CONFIG)
 find_package(Vulkan REQUIRED COMPONENTS volk)
 find_package(glm REQUIRED)
+find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(SHADERC REQUIRED IMPORTED_TARGET shaderc)
 

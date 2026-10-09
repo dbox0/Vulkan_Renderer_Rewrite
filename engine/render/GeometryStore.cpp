@@ -1,5 +1,6 @@
 #include "GeometryStore.h"
 
+#include <cstddef>
 #include <format>
 #include <optional>
 #include <string_view>
@@ -14,6 +15,10 @@ constexpr VkBufferUsageFlags StreamUsage =
     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 
 constexpr uint64_t MiB = 1024 * 1024;
+
+static_assert(sizeof(assets::PackedAttributes) == sizeof(VertexAttributes));
+static_assert(offsetof(assets::PackedAttributes, normal) == offsetof(VertexAttributes, normal));
+static_assert(offsetof(assets::PackedAttributes, uv) == offsetof(VertexAttributes, uv));
 
 void warnFull(std::string_view meshName, std::string_view what, const core::RangeAllocator &allocator, uint64_t requested)
 {
@@ -56,7 +61,7 @@ void GeometryStore::shutdown()
     m_subMeshBuffer   = {};
 }
 
-MeshHandle GeometryStore::addMesh(const MeshData &data)
+MeshHandle GeometryStore::addMesh(const assets::MeshData &data, std::span<const uint32_t> materialSlots)
 {
     const uint64_t vertexCount = data.positions.size();
     const uint64_t indexCount  = data.indices.size();
@@ -102,7 +107,6 @@ MeshHandle GeometryStore::addMesh(const MeshData &data)
     Mesh mesh
     {
         .name      = data.name,
-        .subMeshes = data.subMeshes,
         .vertices  = { .offset = *vertexOffset, .count = vertexCount },
         .indices   = { .offset = *indexOffset, .count = indexCount },
         .table     = { .offset = *tableOffset, .count = subMeshCount }
@@ -112,9 +116,20 @@ MeshHandle GeometryStore::addMesh(const MeshData &data)
 
     std::vector<SubMeshGpu> table;
     table.reserve(subMeshCount);
-    for (SubMesh &subMesh : mesh.subMeshes) {
-        subMesh.vertexStart += vertexBase;
-        subMesh.indexStart  += indexBase;
+    mesh.subMeshes.reserve(subMeshCount);
+    for (const assets::SubMesh &source : data.subMeshes) {
+        const bool known = source.material >= 0 && static_cast<size_t>(source.material) < materialSlots.size();
+        const SubMesh &subMesh = mesh.subMeshes.emplace_back(SubMesh
+        {
+            .vertexStart   = source.vertexStart + vertexBase,
+            .vertexCount   = source.vertexCount,
+            .indexStart    = source.indexStart + indexBase,
+            .indexCount    = source.indexCount,
+            .materialIndex = known ? materialSlots[static_cast<size_t>(source.material)] : 0,
+            .sphere        = source.sphere,
+            .aabbMin       = source.aabbMin,
+            .aabbMax       = source.aabbMax
+        });
         table.push_back(SubMeshGpu
         {
             .firstIndex   = subMesh.indexStart,

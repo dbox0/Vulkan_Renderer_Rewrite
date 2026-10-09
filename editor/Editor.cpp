@@ -161,7 +161,7 @@ void Editor::onUpdate(float)
         pending.swap(m_pendingModel);
     }
     if (pending) {
-        m_currentModel = m_app->loadData(*pending) ? *pending : std::filesystem::path{};
+        m_app->requestLoad(*pending);
     }
 
     ImGui_ImplVulkan_NewFrame();
@@ -215,11 +215,14 @@ void Editor::drawScenePanel()
 {
     ImGui::Begin("Scene");
 
-    if (m_currentModel.empty()) {
+    const std::filesystem::path &currentModel = m_app->currentModel();
+    if (m_app->isLoading()) {
+        ImGui::TextUnformatted("Loading...");
+    } else if (currentModel.empty()) {
         ImGui::TextUnformatted("No model loaded");
     } else {
-        ImGui::TextUnformatted(m_currentModel.filename().string().c_str());
-        ImGui::SetItemTooltip("%s", m_currentModel.string().c_str());
+        ImGui::TextUnformatted(currentModel.filename().string().c_str());
+        ImGui::SetItemTooltip("%s", currentModel.string().c_str());
     }
     if (ImGui::Button("Open glTF...")) {
         showOpenDialog();

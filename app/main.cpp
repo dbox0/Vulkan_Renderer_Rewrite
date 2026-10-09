@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     app.init();
 
     if (argc > 1) {
-        app.loadData(std::filesystem::path(argv[1]));
+        app.requestLoad(std::filesystem::path(argv[1]));
     } else {
         core::log("No model given; usage: vulkanapp path/to/scene.gltf");
     }

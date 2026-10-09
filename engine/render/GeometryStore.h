@@ -1,9 +1,11 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "Types.h"
+#include "assets/MeshData.h"
 #include "core/Handle.h"
 #include "core/RangeAllocator.h"
 #include "gfx/Resources.h"
@@ -24,7 +26,7 @@ public:
     void init();
     void shutdown();
 
-    MeshHandle addMesh(const MeshData &data);
+    MeshHandle addMesh(const assets::MeshData &data, std::span<const uint32_t> materialSlots);
     void       removeMesh(MeshHandle handle);
     void       clear();
 

@@ -1,11 +1,13 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <future>
 
 #include <SDL3/SDL_events.h>
 
 #include "AppLayer.h"
 #include "FrameStats.h"
+#include "assets/ImportedScene.h"
 #include "gfx/Context.h"
 #include "gfx/StagingUploader.h"
 #include "gfx/Swapchain.h"
@@ -20,7 +22,9 @@ class Application
 {
 public:
     void init();
-    bool loadData(const std::filesystem::path &modelPath);
+    void requestLoad(const std::filesystem::path &modelPath);
+    bool isLoading() const { return m_pendingImport.valid(); }
+    const std::filesystem::path &currentModel() const { return m_currentModel; }
     void run();
     void shutdown();
 
@@ -41,6 +45,7 @@ public:
 
 private:
     void handleEvent(const SDL_Event &event);
+    void pollLoad();
     void cyclePresentMode();
 
     static constexpr uint32_t MaxNodes          = 4096;
@@ -65,6 +70,10 @@ private:
 
     scene::Scene      m_scene;
     scene::NodeHandle m_modelRoot;
+
+    std::future<assets::ImportResult> m_pendingImport;
+    std::filesystem::path             m_pendingPath;
+    std::filesystem::path             m_currentModel;
     Camera           m_camera;
     render::Renderer m_renderer{ m_ctx, m_swapchain, m_uploader, m_resources, m_geometry };
 };

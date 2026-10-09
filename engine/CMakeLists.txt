@@ -2,8 +2,14 @@ add_library(core STATIC
         core/Hash.h
         core/RangeAllocator.cpp
         core/RangeAllocator.h
-        core/Handle.h)
+        core/Handle.h
+        core/Parallel.cpp
+        core/Parallel.h
+        core/Transform.h)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(core PUBLIC glm::glm Threads::Threads)
+# Zero-to-one depth so glm's projections match Vulkan's clip space.
+target_compile_definitions(core PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_ENABLE_EXPERIMENTAL)
 target_compile_features(core PUBLIC cxx_std_20)
 
 enable_warnings(core)
@@ -37,8 +43,6 @@ add_library(scene STATIC
         scene/ComponentTable.h
         scene/Components.h)
 target_link_libraries(scene PUBLIC core glm::glm SDL3::SDL3)
-# Zero-to-one depth so glm's projections match Vulkan's clip space.
-target_compile_definitions(scene PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_ENABLE_EXPERIMENTAL)
 enable_warnings(scene)
 
 add_library(render STATIC
@@ -49,14 +53,18 @@ add_library(render STATIC
         render/InstanceSlots.h
         render/InstanceSlots.cpp
         render/SceneExtract.cpp
-        render/SceneExtract.h)
-target_link_libraries(render PUBLIC gfx scene)
+        render/SceneExtract.h
+        render/Instantiate.cpp
+        render/Instantiate.h)
+target_link_libraries(render PUBLIC gfx scene assets)
 # shaders/shared/GpuTypes.h compiled by both C++ and GLSL.
 target_include_directories(render PUBLIC ${PROJECT_SOURCE_DIR}/shaders)
 enable_warnings(render)
 
-# The loader writes straight into the render stores for now.
+# CPU-side import. No Vulkan.
 add_library(assets STATIC
-    assets/GltfLoader.cpp)
-target_link_libraries(assets PUBLIC render scene PRIVATE third_party)
+    assets/GltfImporter.cpp
+    assets/ImportedScene.h
+    assets/MeshData.h)
+target_link_libraries(assets PUBLIC core PRIVATE third_party)
 enable_warnings(assets)

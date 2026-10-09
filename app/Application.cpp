@@ -3,9 +3,10 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <chrono>
 #include <format>
 
-#include "assets/GltfLoader.h"
+#include "render/Instantiate.h"
 #include "core/Log.h"
 
 namespace
@@ -59,32 +60,58 @@ void Application::init()
     m_geometry.init();
 }
 
-bool Application::loadData(const std::filesystem::path &modelPath)
+void Application::requestLoad(const std::filesystem::path &modelPath)
 {
+    if (m_pendingImport.valid()) {
+        core::warn(std::format("Still loading {}; ignoring {}", m_pendingPath.string(), modelPath.string()));
+        return;
+    }
+    core::log("Loading " + modelPath.string());
+    m_pendingPath = modelPath;
+    m_pendingImport = std::async(std::launch::async, assets::importGltf, modelPath);
+}
+
+void Application::pollLoad()
+{
+    if (!m_pendingImport.valid() ||
+        m_pendingImport.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+        return;
+    }
+    assets::ImportResult result = m_pendingImport.get();
+    for (const std::string &warning : result.warnings) {
+        core::warn(warning);
+    }
+    if (!result.scene) {
+        core::warn("Failed to load model: " + m_pendingPath.string());
+        return;
+    }
+    if (result.scene->nodes.size() + 1 > m_scene.capacity()) {
+        core::warn(std::format("{} has {} nodes, more than the scene's {}; keeping the current model",
+                               m_pendingPath.string(), result.scene->nodes.size(), m_scene.capacity()));
+        return;
+    }
+
+    const auto uploadStart = std::chrono::steady_clock::now();
     m_scene.clear();
-    m_modelRoot = {};
     m_geometry.clear();
     m_resources.clearModelData();
 
-    GltfLoader loader(m_ctx, m_resources, m_geometry, m_scene);
-    if (!loader.load(modelPath)) {
-        core::warn("Failed to load model: " + modelPath.string());
-        return false;
-    }
-    m_modelRoot = loader.root();
-
-
+    m_modelRoot = render::instantiate(*result.scene, m_pendingPath.stem().string(), m_scene, m_resources, m_geometry);
     m_resources.updateTextureDescriptors();
     m_resources.uploadMaterialBuffer();
-
     m_uploader.flush();
+    m_currentModel = m_modelRoot.valid() ? m_pendingPath : std::filesystem::path{};
+    const std::chrono::duration<double, std::milli> uploadTime = std::chrono::steady_clock::now() - uploadStart;
+
+    core::log(std::format("Loaded {}: parse {:.1f} ms, meshes {:.1f} ms, images {:.1f} ms, upload {:.1f} ms",
+                          m_pendingPath.filename().string(), result.parseMs, result.meshesMs, result.imagesMs,
+                          uploadTime.count()));
     core::log(std::format("Loaded {} meshes, {} materials", m_geometry.liveMeshCount(), m_resources.materialCount()));
     const core::RangeAllocator &vertices = m_geometry.vertexAllocator();
     const core::RangeAllocator &indices  = m_geometry.indexAllocator();
     core::log(std::format("Geometry: {} of {} vertices used (largest free {}), {} of {} indices used (largest free {})",
                           vertices.used(), vertices.capacity(), vertices.largestFree(),
                           indices.used(), indices.capacity(), indices.largestFree()));
-    return true;
 }
 
 void Application::run()
@@ -115,6 +142,7 @@ void Application::run()
         m_frameStats.uploadStalls = up.stalls;
         m_frameStats.uploadStallNs = up.stallNs;
 
+        pollLoad();
         if (m_layer) {
             m_layer->onUpdate(deltaTime);
         }

@@ -33,5 +33,4 @@ private:
 
     std::mutex                           m_pendingMutex;   // the file dialog answers on its own thread
     std::optional<std::filesystem::path> m_pendingModel;
-    std::filesystem::path                m_currentModel;
 };
