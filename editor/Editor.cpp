@@ -246,8 +246,11 @@ void Editor::drawScenePanel()
     ImGui::SeparatorText("Camera");
     Camera &camera = m_app->camera();
     ImGui::SliderFloat("FOV", &camera.fovDegrees, 20.0f, 120.0f, "%.0f deg");
-    ImGui::DragFloat("Near", &camera.nearPlane, 0.001f, 0.0001f, camera.farPlane, "%.4f");
+    ImGui::DragFloat("Near", &camera.nearPlane, 0.001f, 0.0001f, camera.infiniteFar ? 100.0f : camera.farPlane, "%.4f");
+    ImGui::Checkbox("Infinite far", &camera.infiniteFar);
+    ImGui::BeginDisabled(camera.infiniteFar);
     ImGui::DragFloat("Far", &camera.farPlane, 1.0f, camera.nearPlane, 100000.0f, "%.0f");
+    ImGui::EndDisabled();
     ImGui::DragFloat("Speed", &camera.speed, 0.1f, 0.01f, 1000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
     if (ImGui::Button("Look at origin")) {
         camera.lookAt(glm::vec3(0.0f));

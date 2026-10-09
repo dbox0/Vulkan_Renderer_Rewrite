@@ -83,7 +83,6 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthTest = true,
         .depthWrite = true,
-        .depthCompare = VK_COMPARE_OP_LESS,
         .dynamicFrontFace = true
     });
 }
@@ -330,7 +329,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
         .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue{ .depthStencil{ .depth = 1.0f } }
+        .clearValue{ .depthStencil{ .depth = 0.0f } }
     };
     const VkRenderingInfo renderingInfo
     {

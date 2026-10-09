@@ -83,7 +83,17 @@ glm::mat4 Camera::view() const
 
 glm::mat4 Camera::projection(float aspectRatio) const
 {
-    return glm::perspectiveRH_ZO(glm::radians(fovDegrees), aspectRatio, nearPlane, farPlane);
+    if (!infiniteFar) {
+        return glm::perspectiveRH_ZO(glm::radians(fovDegrees), aspectRatio, farPlane, nearPlane);
+    }
+
+    const float f = 1.0f / std::tan(glm::radians(fovDegrees) * 0.5f);
+    glm::mat4 p(0.0f);
+    p[0][0] = f / aspectRatio;
+    p[1][1] = f;
+    p[2][3] = -1.0f;
+    p[3][2] = nearPlane;
+    return p;
 }
 
 glm::mat4 Camera::viewProjection(float aspectRatio) const
