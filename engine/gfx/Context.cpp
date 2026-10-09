@@ -273,6 +273,7 @@ namespace gfx {
             .features
             {
                 .multiDrawIndirect = VK_TRUE,
+                .drawIndirectFirstInstance = VK_TRUE,
                 .shaderInt64 = VK_TRUE
             }
         };
