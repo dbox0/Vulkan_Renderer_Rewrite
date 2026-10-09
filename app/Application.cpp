@@ -62,6 +62,7 @@ void Application::init()
 bool Application::loadData(const std::filesystem::path &modelPath)
 {
     m_scene.clear();
+    m_modelRoot = {};
     m_geometry.clear();
     m_resources.clearModelData();
 
@@ -70,9 +71,9 @@ bool Application::loadData(const std::filesystem::path &modelPath)
         core::warn("Failed to load model: " + modelPath.string());
         return false;
     }
+    m_modelRoot = loader.root();
 
 
-    // Each of these commits a snapshot of a store to the GPU, so they run after ALL loading.
     m_resources.updateTextureDescriptors();
     m_resources.uploadMaterialBuffer();
 
@@ -120,6 +121,7 @@ void Application::run()
         if (!m_layer || !m_layer->wantsKeyboard()) {
             m_camera.update(keys, deltaTime);
         }
+        m_scene.update();
         m_renderer.render(m_scene, m_camera);
 
         if (!m_firstFrameLogged && m_renderer.frameNumber() > 0) {

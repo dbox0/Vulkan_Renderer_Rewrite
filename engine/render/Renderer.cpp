@@ -132,7 +132,7 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame)
 
     DrawList draws;
     uint32_t mirroredCount = 0;
-    for (const DrawItem &item : m_drawItems) {
+    for (const scene::DrawItem &item : m_drawItems) {
         if (const Mesh *mesh = m_geometry.get(item.mesh)) {
             const auto subMeshCount = static_cast<uint32_t>(mesh->subMeshes.size());
             draws.count += subMeshCount;
@@ -153,7 +153,7 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame)
 
     uint32_t normalSlot   = 0;
     uint32_t mirroredSlot = draws.firstMirrored;
-    for (const DrawItem &item : m_drawItems) {
+    for (const scene::DrawItem &item : m_drawItems) {
         const Mesh *mesh = m_geometry.get(item.mesh);
         if (!mesh) {
             continue;
@@ -186,7 +186,7 @@ Renderer::DrawList Renderer::writeDrawCommands(Frame &frame)
     return draws;
 }
 
-void Renderer::render(Scene &scene, const Camera &camera)
+void Renderer::render(const scene::Scene &scene, const Camera &camera)
 {
     if (m_swapchain.needsRecreate()) {
         if (!m_swapchain.recreate()) {

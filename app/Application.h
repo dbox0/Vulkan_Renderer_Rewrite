@@ -5,7 +5,7 @@
 #include <SDL3/SDL_events.h>
 
 #include "AppLayer.h"
-#include "core/FrameStats.h"
+#include "FrameStats.h"
 #include "gfx/Context.h"
 #include "gfx/StagingUploader.h"
 #include "gfx/Swapchain.h"
@@ -31,18 +31,19 @@ public:
     gfx::Context     &context()         { return m_ctx; }
     gfx::Swapchain   &swapchain()       { return m_swapchain; }
     render::Renderer &renderer()        { return m_renderer; }
-    Scene            &scene()           { return m_scene; }
+    scene::Scene     &scene()           { return m_scene; }
+    scene::NodeHandle modelRoot() const { return m_modelRoot; }
     Camera           &camera()          { return m_camera; }
     GeometryStore    &geometry()        { return m_geometry; }
     ResourceStore    &resources()       { return m_resources; }
-    const core::FrameStats &frameStats() const { return m_frameStats; }
+    const FrameStats &frameStats() const { return m_frameStats; }
     void              quit()            { m_running = false; }
 
 private:
     void handleEvent(const SDL_Event &event);
     void cyclePresentMode();
 
-    static constexpr size_t   MaxNodes          = 4096;
+    static constexpr uint32_t MaxNodes          = 4096;
 
     SDL_Window *m_window    = nullptr;
     bool        m_running   = false;
@@ -52,7 +53,7 @@ private:
     uint64_t m_initStartNs      = 0;
     bool     m_firstFrameLogged = false;
 
-    core::FrameStats m_frameStats;
+    FrameStats m_frameStats;
 
     // Declaration order is construction order; shutdown() tears down explicitly in reverse.
     gfx::Context     m_ctx;
@@ -62,7 +63,8 @@ private:
     GeometryStore        m_geometry{ m_ctx, m_uploader };
 
 
-    Scene            m_scene;
+    scene::Scene      m_scene;
+    scene::NodeHandle m_modelRoot;
     Camera           m_camera;
     render::Renderer m_renderer{ m_ctx, m_swapchain, m_uploader, m_resources, m_geometry };
 };

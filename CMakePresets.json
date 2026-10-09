@@ -31,5 +31,9 @@
         { "name": "debug", "configurePreset": "debug" },
         { "name": "debug-asan", "configurePreset": "debug-asan" },
         { "name": "release", "configurePreset": "release" }
+    ],
+    "testPresets": [
+        { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+        { "name": "debug-asan", "configurePreset": "debug-asan", "output": { "outputOnFailure": true } }
     ]
 }

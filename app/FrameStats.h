@@ -2,9 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-
-namespace core
-{
+#include <cstdint>
 
 // Ring buffer of the last few seconds of CPU frame times, in milliseconds.
 class FrameStats
@@ -50,5 +48,3 @@ private:
     size_t m_count = 0;
 
 };
-
-}

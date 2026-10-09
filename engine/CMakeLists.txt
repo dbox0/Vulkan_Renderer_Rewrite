@@ -32,7 +32,10 @@ enable_warnings(gfx)
 # CPU-side scene data. No Vulkan.
 add_library(scene STATIC
     scene/Scene.cpp
-    scene/Camera.cpp)
+    scene/Camera.cpp
+        scene/SceneTypes.h
+        scene/ComponentTable.h
+        scene/Components.h)
 target_link_libraries(scene PUBLIC core glm::glm SDL3::SDL3)
 # Zero-to-one depth so glm's projections match Vulkan's clip space.
 target_compile_definitions(scene PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_ENABLE_EXPERIMENTAL)

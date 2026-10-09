@@ -7,11 +7,14 @@
 #include <format>
 #include <iostream>
 #include <numeric>
+#include <optional>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 
 #include <glm/gtc/packing.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
 #include <tiny_gltf_v3.h>
 #include <stb_image.h>
@@ -146,6 +149,35 @@ uint32_t encodeNormal(glm::vec3 n)
     return glm::packSnorm2x16(octEncode(glm::normalize(n)));
 }
 
+scene::Light convertLight(const tg3_light &light)
+{
+    const std::string_view type = light.type.data ? std::string_view(light.type.data, light.type.len) : "point";
+    return scene::Light
+    {
+        .type = type == "directional" ? scene::Light::Type::Directional
+              : type == "spot"        ? scene::Light::Type::Spot
+                                      : scene::Light::Type::Point,
+        .color = glm::vec3(light.color[0], light.color[1], light.color[2]),
+        .intensity = static_cast<float>(light.intensity),
+        .range = static_cast<float>(light.range),
+        .innerCone = static_cast<float>(light.spot.inner_cone_angle),
+        .outerCone = static_cast<float>(light.spot.outer_cone_angle)
+    };
+}
+
+std::optional<scene::CameraComponent> convertCamera(const tg3_camera &camera)
+{
+    if (!camera.type.data || std::string_view(camera.type.data, camera.type.len) != "perspective") {
+        return std::nullopt;
+    }
+    return scene::CameraComponent
+    {
+        .yFov = static_cast<float>(camera.perspective.yfov),
+        .zNear = static_cast<float>(camera.perspective.znear),
+        .zFar = static_cast<float>(camera.perspective.zfar)
+    };
+}
+
 }
 
 
@@ -194,13 +226,13 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
     const std::vector<uint32_t> materialIds = loadMaterials(model, textureIds);
     const std::vector<MeshHandle> meshes    = loadMeshes(model, materialIds);
 
-    // Scene nodes.
-    const int sceneIndex = model.default_scene != -1 ? model.default_scene : 0;
-    const tg3_scene *scene = &model.scenes[sceneIndex];
-
-    for (uint32_t i = 0; i < scene->nodes_count; ++i) {
-        const uint32_t nodeId = importNode(model, scene->nodes[i], 0, 0, meshes);
-        m_scene.addRootNode(nodeId);
+    m_root = m_scene.create(filepath.stem().string());
+    if (m_root.valid() && model.scenes_count > 0) {
+        const int sceneIndex = model.default_scene != -1 ? model.default_scene : 0;
+        const tg3_scene &gltfScene = model.scenes[sceneIndex];
+        for (uint32_t i = 0; i < gltfScene.nodes_count; ++i) {
+            importNode(model, gltfScene.nodes[i], m_root, meshes);
+        }
     }
 
     tg3_model_free(&model);
@@ -209,62 +241,55 @@ bool GltfLoader::load(const std::filesystem::path &filepath)
 }
 
 
-uint32_t GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex,
-                                uint32_t parentId, uint32_t prevSiblingId,
-                                const std::vector<MeshHandle> &meshes)
+// Creating the parent before recursing into its children is what keeps parent indices below child indices.
+void GltfLoader::importNode(const tg3_model &model, int32_t nodeIndex, scene::NodeHandle parent,
+                            const std::vector<MeshHandle> &meshes)
 {
     const tg3_node &tg3Node = model.nodes[nodeIndex];
 
-    NodeWorld &nodeWorld = m_scene.nodes();
-    const uint32_t nodeId = nodeWorld.createNode().second;
+    const std::string_view name = tg3Node.name.data ? std::string_view(tg3Node.name.data, tg3Node.name.len)
+                                                    : std::string_view("Node");
+    const scene::NodeHandle node = m_scene.create(name, parent);
+    if (!node.valid()) {
+        return;
+    }
 
-    {
-        Node &node = nodeWorld.getNode(nodeId);
-        node.parentId = parentId;
-
-        if (tg3Node.has_matrix) {
-            glm::mat4 transform(1.0f);
-            float *transPtr = glm::value_ptr(transform);
-            for (uint32_t i = 0; i < 16; ++i) {
-                transPtr[i] = static_cast<float>(tg3Node.matrix[i]);
-            }
-            node.setTransform(transform);
-        } else {
-            const glm::vec3 translation(tg3Node.translation[0], tg3Node.translation[1], tg3Node.translation[2]);
-            // glTF stores quaternions XYZW; glm's constructor takes WXYZ.
-            const glm::quat rotation(static_cast<float>(tg3Node.rotation[3]),
-                                     static_cast<float>(tg3Node.rotation[0]),
-                                     static_cast<float>(tg3Node.rotation[1]),
-                                     static_cast<float>(tg3Node.rotation[2]));
-            const glm::vec3 scale(tg3Node.scale[0], tg3Node.scale[1], tg3Node.scale[2]);
-
-            node.setTranslation(translation);
-            node.setRotation(rotation);
-            node.setScale(scale);
+    scene::Transform local;
+    if (tg3Node.has_matrix) {
+        glm::mat4 matrix(1.0f);
+        float *matrixPtr = glm::value_ptr(matrix);
+        for (uint32_t i = 0; i < 16; ++i) {
+            matrixPtr[i] = static_cast<float>(tg3Node.matrix[i]);
         }
+        glm::vec3 skew;
+        glm::vec4 perspective;
+        glm::decompose(matrix, local.scale, local.rotation, local.translation, skew, perspective);
+    } else {
+        local.translation = glm::vec3(tg3Node.translation[0], tg3Node.translation[1], tg3Node.translation[2]);
+        // glTF stores quaternions XYZW; glm's constructor takes WXYZ.
+        local.rotation = glm::quat(static_cast<float>(tg3Node.rotation[3]),
+                                   static_cast<float>(tg3Node.rotation[0]),
+                                   static_cast<float>(tg3Node.rotation[1]),
+                                   static_cast<float>(tg3Node.rotation[2]));
+        local.scale = glm::vec3(tg3Node.scale[0], tg3Node.scale[1], tg3Node.scale[2]);
+    }
+    m_scene.setLocal(node, local);
 
-        if (tg3Node.mesh != -1 && static_cast<size_t>(tg3Node.mesh) < meshes.size()) {
-            node.mesh = meshes[tg3Node.mesh];
+    if (tg3Node.mesh != -1 && static_cast<size_t>(tg3Node.mesh) < meshes.size()) {
+        m_scene.setComponent(node, scene::MeshRenderer{ meshes[static_cast<size_t>(tg3Node.mesh)] });
+    }
+    if (tg3Node.light != -1 && static_cast<uint32_t>(tg3Node.light) < model.lights_count) {
+        m_scene.setComponent(node, convertLight(model.lights[tg3Node.light]));
+    }
+    if (tg3Node.camera != -1 && static_cast<uint32_t>(tg3Node.camera) < model.cameras_count) {
+        if (const std::optional<scene::CameraComponent> camera = convertCamera(model.cameras[tg3Node.camera])) {
+            m_scene.setComponent(node, *camera);
         }
     }
 
-    if (prevSiblingId) {
-        nodeWorld.getNode(prevSiblingId).nextSiblingId = nodeId;
-    }
-
-    uint32_t lastChildId  = 0;
-    uint32_t firstChildId = 0;
     for (uint32_t i = 0; i < tg3Node.children_count; ++i) {
-        lastChildId = importNode(model, tg3Node.children[i], nodeId, lastChildId, meshes);
-        if (!firstChildId) {
-            firstChildId = lastChildId;
-        }
+        importNode(model, tg3Node.children[i], node, meshes);
     }
-    if (firstChildId) {
-        nodeWorld.getNode(nodeId).firstChildId = firstChildId;
-    }
-
-    return nodeId;
 }
 
 // meshes

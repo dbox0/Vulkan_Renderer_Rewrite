@@ -229,19 +229,22 @@ void Editor::drawScenePanel()
     ImGui::SeparatorText("Model");
     ImGui::Text("%zu meshes, %zu materials", m_app->geometry().liveMeshCount(), m_app->resources().materialCount());
 
-    Scene &scene = m_app->scene();
-    if (const uint32_t rootId = scene.rootNodeId()) {
-        Node &root = scene.getNode(rootId);
-
-        glm::vec3 position = root.getTranslation();
-        if (ImGui::DragFloat3("Root position", &position.x, 0.05f)) {
-            root.setTranslation(position);
-        }
-        float scale = root.getScale().x;
+    scene::Scene &scene = m_app->scene();
+    if (const scene::NodeHandle root = m_app->modelRoot(); scene.alive(root)) {
+        scene::Transform local = scene.local(root);
+        bool changed = ImGui::DragFloat3("Root position", &local.translation.x, 0.05f);
+        float scale = local.scale.x;
         if (ImGui::DragFloat("Root scale", &scale, 0.001f, 0.0001f, 1000.0f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
-            root.setScale(glm::vec3(scale));
+            local.scale = glm::vec3(scale);
+            changed = true;
+        }
+        if (changed) {
+            scene.setLocal(root, local);
         }
     }
+    ImGui::Text("%u of %u nodes used", scene.indexCount(), scene.capacity());
+    ImGui::Text("%u mesh renderers, %u lights, %u cameras", scene.components<scene::MeshRenderer>().size(),
+                scene.components<scene::Light>().size(), scene.components<scene::CameraComponent>().size());
 
     ImGui::SeparatorText("Camera");
     Camera &camera = m_app->camera();
@@ -262,7 +265,7 @@ void Editor::drawScenePanel()
     ImGui::TextDisabled("Hold RMB: look, WASD/QE fly. MMB drag: pan");
 
     ImGui::SeparatorText("Frame");
-    const core::FrameStats &stats = m_app->frameStats();
+    const FrameStats &stats = m_app->frameStats();
     const float average = stats.average();
     ImGui::Text("%.2f ms avg, %.2f ms max (%.0f FPS)", average, stats.maximum(), average > 0.0f ? 1000.0f / average : 0.0f);
     ImGui::PlotLines("##frametimes", stats.data(), static_cast<int>(stats.count()), static_cast<int>(stats.oldest()),
@@ -289,13 +292,13 @@ void Editor::drawScenePanel()
 
 void Editor::frameModel()
 {
-    std::vector<DrawItem> items;
+    std::vector<scene::DrawItem> items;
     m_app->scene().collectDrawItems(items);
 
     glm::vec3 lo(FLT_MAX);
     glm::vec3 hi(-FLT_MAX);
     bool found = false;
-    for (const DrawItem &item : items) {
+    for (const scene::DrawItem &item : items) {
         const Mesh *mesh = m_app->geometry().get(item.mesh);
         if (!mesh) {
             continue;

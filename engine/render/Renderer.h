@@ -43,7 +43,7 @@ public:
     void init(const std::filesystem::path &shaderDir, const std::filesystem::path &cacheDir);
     void shutdown();
 
-    void render(Scene &scene, const Camera &camera);
+    void render(const scene::Scene &scene, const Camera &camera);
 
     // Recorded after the scene, into the swapchain image with no depth attachment. Used by the editor.
     using Overlay = std::function<void(VkCommandBuffer)>;
@@ -98,7 +98,7 @@ private:
     gfx::GpuProfiler m_gpuProfiler;
 
     uint32_t              m_maxDraws = 0;
-    std::vector<DrawItem> m_drawItems;   // reused across frames
+    std::vector<scene::DrawItem> m_drawItems;   // reused across frames
     Overlay               m_overlay;
 
     std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
