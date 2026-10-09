@@ -33,8 +33,10 @@ namespace render
 
         void collect(const scene::Scene &scene);
         void write(const scene::Scene &scene, gfx::FrameArena &arena);
-        void recordUploads(VkCommandBuffer cmd) const;
+        bool hasCopies() const { return m_instances.hasCopies(); }
+        void recordCopies(VkCommandBuffer cmd) const { m_instances.recordCopies(cmd); }
 
+        VkBuffer        instanceBuffer() const   { return m_instances.buffer(); }
         VkDeviceAddress instancesAddress() const { return m_instances.address(); }
         std::span<const VkDrawIndexedIndirectCommand> commands() const { return m_commands; }
         uint32_t firstMirrored() const { return m_firstMirrored; }

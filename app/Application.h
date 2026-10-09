@@ -47,6 +47,7 @@ private:
     void handleEvent(const SDL_Event &event);
     void pollLoad();
     void cyclePresentMode();
+    void dumpRenderGraph() const;
 
     static constexpr uint32_t MaxNodes          = 4096;
 
@@ -74,6 +75,7 @@ private:
     std::future<assets::ImportResult> m_pendingImport;
     std::filesystem::path             m_pendingPath;
     std::filesystem::path             m_currentModel;
+    std::filesystem::path             m_cacheDir;
     Camera           m_camera;
     render::Renderer m_renderer{ m_ctx, m_swapchain, m_uploader, m_resources, m_geometry };
 };

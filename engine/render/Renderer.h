@@ -14,6 +14,7 @@
 #include "gfx/ShaderCompiler.h"
 #include "PipelineRegistry.h"
 #include "SceneExtract.h"
+#include "graph/RenderGraph.h"
 
 
 namespace gfx {
@@ -30,12 +31,25 @@ struct PushConstants;
 namespace render
 {
 
+struct FrameTargets
+{
+    rg::TextureHandle swapchain;
+    rg::TextureHandle sceneColor;
+    rg::TextureHandle depth;
+};
+
 class Renderer
 {
 public:
     static constexpr uint32_t FramesInFlight = 2;
-    static constexpr VkFormat DepthFormat    = VK_FORMAT_D32_SFLOAT;
-    static constexpr uint32_t MaxGpuScopes   = 8;
+    static constexpr VkFormat DepthFormat      = VK_FORMAT_D32_SFLOAT;
+    static constexpr VkFormat SceneColorFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+
+    struct PostSettings
+    {
+        float exposure = 1.0f;
+    };
+    static constexpr uint32_t MaxGpuScopes   = 16;
 
     Renderer(gfx::Context &ctx, gfx::Swapchain &swapchain,gfx::StagingUploader &uploader ,ResourceStore &resources, GeometryStore &geometry)
         : m_ctx(ctx), m_uploader(uploader), m_swapchain(swapchain), m_resources(resources), m_geometry(geometry) {}
@@ -47,12 +61,13 @@ public:
 
     void render(const scene::Scene &scene, const Camera &camera);
 
-    // Recorded after the scene, into the swapchain image with no depth attachment. Used by the editor.
-    using Overlay = std::function<void(VkCommandBuffer)>;
-    void setOverlay(Overlay overlay) { m_overlay = std::move(overlay); }
+    using GraphHook = std::function<void(rg::RenderGraph &, const FrameTargets &)>;
+    void setGraphHook(GraphHook hook) { m_graphHook = std::move(hook); }
 
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
     const SceneExtract     &extract() const     { return m_extract; }
+    PostSettings           &postSettings()      { return m_post; }
+    const rg::RenderGraph  &graph() const       { return m_graph; }
     uint64_t                frameNumber() const { return m_frameNumber; }
 
     void reloadShaders() { m_pipelines.reloadAll(); }
@@ -76,10 +91,11 @@ private:
 
     void createFrames();
     void createPipeline(const std::filesystem::path &shaderDir);
-    void resizeDepthIfNeeded();
 
     DrawList writeDrawCommands(Frame &frame) const;
-    void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc);
+    void declareFrame(uint32_t imageIndex, const DrawList &draws, const PushConstants &pc);
+    void recordScene(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc) const;
+    void recordFrame(Frame &frame);
 
     gfx::Context   &m_ctx;
     gfx::StagingUploader &m_uploader;
@@ -94,12 +110,14 @@ private:
     gfx::ShaderCompiler m_shaderCompiler;
     PipelineRegistry    m_pipelines;
     PipelineId          m_scenePipeline;
+    PipelineId          m_postPipeline;
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
-    gfx::Image       m_depth;
+    uint32_t         m_postSamplerSlot = 0;
+    PostSettings     m_post;
     gfx::GpuProfiler m_gpuProfiler;
     SceneExtract     m_extract{ m_ctx, m_geometry };
-
-    Overlay          m_overlay;
+    rg::RenderGraph  m_graph;
+    GraphHook        m_graphHook;
 
     std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
 

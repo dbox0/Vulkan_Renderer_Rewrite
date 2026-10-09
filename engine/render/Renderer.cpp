@@ -5,7 +5,6 @@
 
 #include "GeometryStore.h"
 #include "ResourceStore.h"
-#include "gfx/Barriers.h"
 #include "gfx/Pipeline.h"
 #include "scene/Camera.h"
 #include "gfx/FrameArena.h"
@@ -20,6 +19,7 @@ namespace
 
 constexpr uint32_t PushConstantSize = 128;
 static_assert(sizeof(PushConstants) <= PushConstantSize);
+static_assert(sizeof(PostConstants) <= PushConstantSize);
 
 }
 
@@ -36,7 +36,20 @@ void Renderer::init(const std::filesystem::path &shaderDir, const std::filesyste
     const std::chrono::duration<double, std::milli> pipelineTime = std::chrono::steady_clock::now() - pipelineStart;
     core::log(std::format("Pipelines: {:.1f} ms ({} SPIR-V hits, {} misses)", pipelineTime.count(),
                           m_pipelines.shaderCacheHits(), m_pipelines.shaderCacheMisses()));
-    resizeDepthIfNeeded();
+
+    const VkSamplerCreateInfo postSampler
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .maxLod = 0.0f
+    };
+    m_postSamplerSlot = m_resources.samplerSlot(m_resources.addSampler(postSampler));
+    m_graph.init(m_ctx, m_resources, FramesInFlight);
 }
 
 void Renderer::shutdown()
@@ -44,8 +57,8 @@ void Renderer::shutdown()
     const VkDevice device = m_ctx.device();
 
     m_extract.shutdown();
+    m_graph.shutdown();
     m_gpuProfiler.destroy(m_ctx);
-    m_ctx.destroyImage(m_depth);
     m_pipelines.destroy();
     vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
 
@@ -80,13 +93,19 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
 
     m_scenePipeline = m_pipelines.addGraphics("scene", shaderDir / "shader.vert", shaderDir / "shader.frag", {
         .layout = m_pipelineLayout,
-        .colorFormats = { gfx::Swapchain::Format },
+        .colorFormats = { SceneColorFormat },
         .depthFormat = DepthFormat,
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthTest = true,
         .depthWrite = true,
         .dynamicFrontFace = true
+    });
+
+    m_postPipeline = m_pipelines.addGraphics("post", shaderDir / "post.vert", shaderDir / "post.frag", {
+        .layout = m_pipelineLayout,
+        .colorFormats = { gfx::Swapchain::Format },
+        .cullMode = VK_CULL_MODE_NONE
     });
 }
 
@@ -117,16 +136,6 @@ void Renderer::createFrames() {
         frame.arena.init(m_ctx, 16 * 1024 * 1024, "frame arena");
     }
 }
-void Renderer::resizeDepthIfNeeded()
-{
-    const VkExtent2D extent = m_swapchain.extent();
-    if (m_depth.image && m_depth.extent.width == extent.width && m_depth.extent.height == extent.height) {
-        return;
-    }
-    m_ctx.destroyImage(m_depth);
-    m_depth = m_ctx.createImage(extent, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, "depth");
-}
-
 Renderer::DrawList Renderer::writeDrawCommands(Frame &frame) const
 {
     const std::span<const VkDrawIndexedIndirectCommand> commands = m_extract.commands();
@@ -151,7 +160,6 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
         if (!m_swapchain.recreate()) {
             return;
         }
-        resizeDepthIfNeeded();
     }
 
     Frame &frame = m_frames[m_frameNumber % FramesInFlight];
@@ -196,8 +204,10 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
     const PushConstants pc {frameAlloc.address, m_extract.instancesAddress()};
 
+    declareFrame(imageIndex, draws, pc);
+
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
-    recordFrame(frame, imageIndex, draws, pc);
+    recordFrame(frame);
 
     const VkSemaphoreSubmitInfo waitInfo
     {
@@ -239,7 +249,109 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
 }
 
-void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc)
+void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const PushConstants &pc)
+{
+    const VkExtent2D extent = m_swapchain.extent();
+    m_graph.beginFrame(extent);
+
+    const gfx::Image swapchainImage
+    {
+        .image = m_swapchain.image(imageIndex),
+        .view = m_swapchain.view(imageIndex),
+        .format = gfx::Swapchain::Format,
+        .extent = extent
+    };
+    const FrameTargets targets
+    {
+        .swapchain = m_graph.import("swapchain", swapchainImage,
+            { VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_UNDEFINED },
+            { VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR }),
+        .sceneColor = m_graph.create("sceneColor", { .format = SceneColorFormat }),
+        .depth = m_graph.create("depth", { .format = DepthFormat })
+    };
+
+    constexpr rg::ResourceState vertexRead{ VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT };
+    const MaterialTable   &materials = m_resources.materials();
+    const rg::BufferHandle instanceBuffer = m_graph.import("instances", m_extract.instanceBuffer(), vertexRead);
+    const rg::BufferHandle materialBuffer = m_graph.import("materials", materials.buffer(), vertexRead);
+
+    if (m_extract.hasCopies() || materials.hasCopies()) {
+        rg::PassBuilder upload = m_graph.addPass("Upload");
+        if (m_extract.hasCopies()) {
+            upload.write(instanceBuffer, rg::Usage::TransferDst);
+        }
+        if (materials.hasCopies()) {
+            upload.write(materialBuffer, rg::Usage::TransferDst);
+        }
+        upload.execute([this](rg::PassContext &ctx) {
+            m_extract.recordCopies(ctx.cmd());
+            m_resources.materials().recordCopies(ctx.cmd());
+        });
+    }
+
+    m_graph.addPass("Scene")
+        .color(targets.sceneColor, rg::LoadOp::Clear, { .float32 = { 0.3f, 0.3f, 1.0f, 1.0f } })
+        .depth(targets.depth, rg::LoadOp::Clear, 0.0f)
+        .read(instanceBuffer, rg::Usage::VertexStorageRead)
+        .read(materialBuffer, rg::Usage::VertexStorageRead)
+        .execute([this, draws, pc](rg::PassContext &ctx) { recordScene(ctx, draws, pc); });
+
+    m_graph.addPass("Post")
+        .read(targets.sceneColor, rg::Usage::SampledFragment)
+        .color(targets.swapchain, rg::LoadOp::DontCare)
+        .execute([this, source = targets.sceneColor](rg::PassContext &ctx) {
+            const PostConstants post
+            {
+                .sourceTexture = ctx.sampledIndex(source),
+                .sourceSampler = m_postSamplerSlot,
+                .exposure = m_post.exposure
+            };
+            vkCmdPushConstants(ctx.cmd(), m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PostConstants), &post);
+            vkCmdBindPipeline(ctx.cmd(), VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_postPipeline));
+            vkCmdDraw(ctx.cmd(), 3, 1, 0, 0);
+        });
+
+    if (m_graphHook) {
+        m_graphHook(m_graph, targets);
+    }
+    m_graph.compile();
+}
+
+void Renderer::recordScene(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc) const
+{
+    if (draws.count == 0) {
+        return;
+    }
+    const VkCommandBuffer cmd = ctx.cmd();
+    const VkExtent2D      extent = ctx.renderExtent();
+    const VkViewport viewport
+    {
+        .x = 0.0f,
+        .y = static_cast<float>(extent.height),
+        .width = static_cast<float>(extent.width),
+        .height = -static_cast<float>(extent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_scenePipeline));
+    vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+    constexpr VkDeviceSize stride = sizeof(VkDrawIndexedIndirectCommand);
+    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+    if (draws.firstMirrored > 0) {
+        vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.firstMirrored, stride);
+    }
+    if (draws.count > draws.firstMirrored) {
+        vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
+        vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset + draws.firstMirrored * stride,
+                                 draws.count - draws.firstMirrored, stride);
+    }
+}
+
+void Renderer::recordFrame(Frame &frame)
 {
     const VkCommandBuffer cmd = frame.commandBuffer;
     const VkCommandBufferBeginInfo beginInfo
@@ -249,143 +361,11 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
     };
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
     m_gpuProfiler.beginFrame(cmd, static_cast<uint32_t>(m_frameNumber % FramesInFlight));
-    m_extract.recordUploads(cmd);
-    m_resources.materials().recordUploads(cmd);
 
-    const VkExtent2D extent = m_swapchain.extent();
-    const VkImage swapchainImage = m_swapchain.image(imageIndex);
+    const VkDescriptorSet globalSet = m_resources.globalDescriptorSet();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &globalSet, 0, nullptr);
 
-    gfx::transition(cmd, {
-        .image = swapchainImage,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-    });
-
-    gfx::transition(cmd, {
-        .image = m_depth.image,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .srcStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .dstStage = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-        .dstAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .aspect = VK_IMAGE_ASPECT_DEPTH_BIT
-    });
-
-    const VkRenderingAttachmentInfo colorAttachment
-    {
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain.view(imageIndex),
-        .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue{ .color{ .float32 = { 0.3f, 0.3f, 1.0f, 1.0f } } }
-    };
-    const VkRenderingAttachmentInfo depthAttachment
-    {
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_depth.view,
-        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .clearValue{ .depthStencil{ .depth = 0.0f } }
-    };
-    const VkRenderingInfo renderingInfo
-    {
-        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea{ .extent = extent },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachment,
-        .pDepthAttachment = &depthAttachment
-    };
-    {
-        const gfx::GpuProfiler::Scope scope(m_gpuProfiler, cmd, "Scene");
-        vkCmdBeginRendering(cmd, &renderingInfo);
-
-        if (draws.count > 0) {
-            // Negative height flips Y so +Y points up, matching glTF and glm.
-            const VkViewport viewport
-            {
-                .x = 0.0f,
-                .y = static_cast<float>(extent.height),
-                .width = static_cast<float>(extent.width),
-                .height = -static_cast<float>(extent.height),
-                .minDepth = 0.0f,
-                .maxDepth = 1.0f
-            };
-            const VkRect2D scissor{ .extent = extent };
-            vkCmdSetViewport(cmd, 0, 1, &viewport);
-            vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-            const VkDescriptorSet globalSet = m_resources.globalDescriptorSet();
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0, 1, &globalSet, 0, nullptr);
-
-
-            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
-
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_scenePipeline));
-            vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-            constexpr VkDeviceSize stride = sizeof(VkDrawIndexedIndirectCommand);
-            vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-            if (draws.firstMirrored > 0) {
-                vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.firstMirrored, stride);
-            }
-            if (draws.count > draws.firstMirrored) {
-                vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
-                vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset + draws.firstMirrored * stride,
-                                         draws.count - draws.firstMirrored, stride);
-            }
-        }
-
-        vkCmdEndRendering(cmd);
-    }
-
-    if (m_overlay) {
-        const gfx::GpuProfiler::Scope scope(m_gpuProfiler, cmd, "Overlay");
-        gfx::transition(cmd, {
-            .image = swapchainImage,
-            .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            .dstAccess = VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT
-        });
-
-        const VkRenderingAttachmentInfo overlayAttachment
-        {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-            .imageView = m_swapchain.view(imageIndex),
-            .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
-            .storeOp = VK_ATTACHMENT_STORE_OP_STORE
-        };
-        const VkRenderingInfo overlayInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-            .renderArea{ .extent = extent },
-            .layerCount = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments = &overlayAttachment
-        };
-        vkCmdBeginRendering(cmd, &overlayInfo);
-        m_overlay(cmd);
-        vkCmdEndRendering(cmd);
-    }
-
-    gfx::transition(cmd, {
-        .image = swapchainImage,
-        .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        .srcStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .srcAccess = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-        .dstStage = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT
-    });
+    m_graph.execute(cmd, m_gpuProfiler);
 
     VK_CHECK(vkEndCommandBuffer(cmd));
 }

@@ -4,7 +4,6 @@
 #include <cstring>
 #include <vector>
 
-#include "gfx/Barriers.h"
 #include "gfx/Context.h"
 #include "gfx/FrameArena.h"
 #include "gfx/Resources.h"
@@ -78,18 +77,17 @@ public:
         m_pending.clear();
     }
 
-    void recordUploads(VkCommandBuffer cmd, VkPipelineStageFlags2 readers) const
+    bool hasCopies() const { return !m_copies.empty(); }
+
+    void recordCopies(VkCommandBuffer cmd) const
     {
         if (m_copies.empty()) {
             return;
         }
-        gfx::bufferBarrier(cmd, m_buffer.buffer, readers, VK_ACCESS_2_NONE,
-                           VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
         vkCmdCopyBuffer(cmd, m_copySource, m_buffer.buffer, static_cast<uint32_t>(m_copies.size()), m_copies.data());
-        gfx::bufferBarrier(cmd, m_buffer.buffer, VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-                           readers, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
     }
 
+    VkBuffer        buffer() const    { return m_buffer.buffer; }
     VkDeviceAddress address() const   { return m_buffer.address; }
     uint32_t        capacity() const  { return static_cast<uint32_t>(m_cpu.size()); }
     uint32_t        copyCount() const { return static_cast<uint32_t>(m_copies.size()); }

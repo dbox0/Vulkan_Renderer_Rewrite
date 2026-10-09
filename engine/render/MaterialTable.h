@@ -33,7 +33,9 @@ public:
     std::span<const core::Range> ranges() const { return m_ranges; }
 
     void stage(gfx::FrameArena &arena) { m_table.stage(arena); }
-    void recordUploads(VkCommandBuffer cmd) const { m_table.recordUploads(cmd, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT); }
+    bool hasCopies() const { return m_table.hasCopies(); }
+    void recordCopies(VkCommandBuffer cmd) const { m_table.recordCopies(cmd); }
+    VkBuffer        buffer() const  { return m_table.buffer(); }
     VkDeviceAddress address() const { return m_table.address(); }
 
 private:

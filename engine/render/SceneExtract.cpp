@@ -145,9 +145,4 @@ void SceneExtract::rebuildCommands(const scene::Scene &scene)
     m_commands.insert(m_commands.end(), m_mirroredCommands.begin(), m_mirroredCommands.end());
 }
 
-void SceneExtract::recordUploads(VkCommandBuffer cmd) const
-{
-    m_instances.recordUploads(cmd, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
-}
-
 }

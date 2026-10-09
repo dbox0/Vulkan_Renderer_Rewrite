@@ -48,6 +48,7 @@ void Application::init()
 
     const std::filesystem::path base = SDL_GetBasePath();
     const std::filesystem::path cacheDir = base / "cache";
+    m_cacheDir = cacheDir;
 
     m_ctx.init(m_window, cacheDir);
     m_uploader.init(m_ctx,64ull << 20);
@@ -176,6 +177,8 @@ void Application::handleEvent(const SDL_Event &event)
             cyclePresentMode();
         } else if (event.key.key == SDLK_F5 && !event.key.repeat) {
             m_renderer.reloadShaders();
+        } else if (event.key.key == SDLK_F6 && !event.key.repeat) {
+            dumpRenderGraph();
         }
         break;
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
@@ -190,6 +193,18 @@ void Application::handleEvent(const SDL_Event &event)
         break;
     default:
         break;
+    }
+}
+
+void Application::dumpRenderGraph() const
+{
+    const render::rg::RenderGraph &graph = m_renderer.graph();
+    core::log(graph.dump());
+    const std::filesystem::path path = m_cacheDir / "render_graph.dot";
+    if (graph.writeGraphviz(path)) {
+        core::log(std::format("Render graph written to {} (dot -Tsvg -O render_graph.dot)", path.string()));
+    } else {
+        core::warn(std::format("Could not write {}", path.string()));
     }
 }
 

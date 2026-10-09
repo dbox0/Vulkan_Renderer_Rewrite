@@ -31,6 +31,7 @@ private:
     void drawScenePanel();
     void drawSceneTab();
     void drawMaterialsTab();
+    void drawGraphTab();
     void frameModel();
 
     VkDescriptorSet thumbnail(VkImageView view);

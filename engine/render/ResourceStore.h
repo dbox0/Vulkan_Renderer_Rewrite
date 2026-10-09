@@ -54,6 +54,10 @@ public:
 
     const gfx::Image *textureImage(uint32_t descriptorSlot) const;
 
+    uint32_t registerSampledView(VkImageView view);
+    void     releaseSampledView(uint32_t descriptorSlot);
+    uint32_t samplerSlot(uint32_t samplerId) const;
+
     render::MaterialTable       &materials()       { return m_materials; }
     const render::MaterialTable &materials() const { return m_materials; }
 

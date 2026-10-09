@@ -66,6 +66,13 @@ struct PushConstants{
     uint64_t instances;
 };
 
+struct PostConstants
+{
+    uint  sourceTexture;
+    uint  sourceSampler;
+    float exposure;
+};
+
 #ifdef __cplusplus
 static_assert(sizeof(VertexAttributes) == 12);
 static_assert(offsetof(VertexAttributes, normal) == 0);
@@ -93,6 +100,11 @@ static_assert(offsetof(SubMeshGpu, material) == 12);
 static_assert(offsetof(SubMeshGpu, sphere) == 16);
 static_assert(offsetof(SubMeshGpu, aabbMin) == 32);
 static_assert(offsetof(SubMeshGpu, aabbMax) == 48);
+
+static_assert(sizeof(PostConstants) == 12);
+static_assert(offsetof(PostConstants, sourceTexture) == 0);
+static_assert(offsetof(PostConstants, sourceSampler) == 4);
+static_assert(offsetof(PostConstants, exposure) == 8);
 
 static_assert(sizeof(Instance) == 64);
 static_assert(offsetof(Instance, worldMatrix) == 0);

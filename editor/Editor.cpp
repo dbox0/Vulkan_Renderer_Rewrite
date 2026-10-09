@@ -9,6 +9,7 @@
 #include <cfloat>
 #include <cmath>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "Application.h"
@@ -105,10 +106,13 @@ void Editor::attach(Application &app)
         core::fatal("ImGui_ImplVulkan_Init failed");
     }
 
-    app.renderer().setOverlay([](VkCommandBuffer cmd) {
-        if (ImDrawData *drawData = ImGui::GetDrawData()) {
-            ImGui_ImplVulkan_RenderDrawData(drawData, cmd);
+    app.renderer().setGraphHook([](render::rg::RenderGraph &graph, const render::FrameTargets &targets) {
+        if (!ImGui::GetDrawData()) {
+            return;
         }
+        graph.addPass("UI")
+            .color(targets.swapchain, render::rg::LoadOp::Load)
+            .execute([](render::rg::PassContext &pass) { ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), pass.cmd()); });
     });
     app.setLayer(this);
 }
@@ -124,7 +128,7 @@ void Editor::detach()
     vkDestroySampler(m_app->context().device(), m_thumbnailSampler, nullptr);
     m_thumbnailSampler = VK_NULL_HANDLE;
 
-    m_app->renderer().setOverlay(nullptr);
+    m_app->renderer().setGraphHook(nullptr);
     m_app->setLayer(nullptr);
 
     ImGui_ImplVulkan_Shutdown();
@@ -243,6 +247,10 @@ void Editor::drawScenePanel()
             drawMaterialsTab();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Render graph")) {
+            drawGraphTab();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
     ImGui::End();
@@ -315,6 +323,9 @@ void Editor::drawSceneTab()
     ImGui::Text("Instances: %u written, %u copies, %llu live", instances.written, instances.copyRegions,
                 static_cast<unsigned long long>(instances.live));
 
+    ImGui::SeparatorText("Post");
+    ImGui::DragFloat("Exposure", &m_app->renderer().postSettings().exposure, 0.01f, 0.0f, 16.0f, "%.2f");
+
     ImGui::SeparatorText("GPU");
     for (const gfx::GpuProfiler::Result &result : m_app->renderer().gpuProfiler().results()) {
         ImGui::Text("%s: %.3f ms", result.name, result.milliseconds);
@@ -330,6 +341,20 @@ void Editor::drawSceneTab()
         ImGui::EndCombo();
     }
     ImGui::TextDisabled("FIFO is capped at the refresh rate");
+}
+
+void Editor::drawGraphTab()
+{
+    const std::string text = m_app->renderer().graph().dump();
+    if (ImGui::Button("Copy")) {
+        ImGui::SetClipboardText(text.c_str());
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("F6 logs it and writes render_graph.dot to the cache folder");
+    if (ImGui::BeginChild("graph", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+        ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    }
+    ImGui::EndChild();
 }
 
 void Editor::drawMaterialsTab()

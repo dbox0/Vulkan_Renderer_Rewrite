@@ -237,6 +237,52 @@ const gfx::Image *ResourceStore::textureImage(uint32_t descriptorSlot) const
     return &m_images[imageId - 1];
 }
 
+uint32_t ResourceStore::registerSampledView(VkImageView view)
+{
+    uint32_t id = 0;
+    if (!m_freeTextureIds.empty()) {
+        id = m_freeTextureIds.back();
+        m_freeTextureIds.pop_back();
+    } else if (m_textures.size() >= MaxTextures) {
+        core::fatal("No bindless texture slot left for a render target");
+    } else {
+        m_textures.emplace_back();
+        id = static_cast<uint32_t>(m_textures.size());
+    }
+    m_textures[id - 1] = Texture{};
+
+    const VkDescriptorImageInfo imageInfo
+    {
+        .imageView = view,
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    };
+    const VkWriteDescriptorSet write
+    {
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .dstSet = m_globalDescSet,
+        .dstBinding = TextureBinding,
+        .dstArrayElement = id - 1,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+        .pImageInfo = &imageInfo
+    };
+    vkUpdateDescriptorSets(m_ctx.device(), 1, &write, 0, nullptr);
+    return id - 1;
+}
+
+void ResourceStore::releaseSampledView(uint32_t descriptorSlot)
+{
+    m_ctx.retire([this, id = descriptorSlot + 1] { releaseTextureSlots({ id }); });
+}
+
+uint32_t ResourceStore::samplerSlot(uint32_t samplerId) const
+{
+    if (samplerId == 0 || samplerId > m_samplers.size()) {
+        return m_fallbackSamplerId ? m_fallbackSamplerId - 1 : 0;
+    }
+    return samplerId - 1;
+}
+
 void ResourceStore::createFallbackTexture()
 {
     // Magenta 1x1. Must be the first image, sampler and texture created
