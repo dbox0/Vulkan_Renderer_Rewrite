@@ -184,13 +184,14 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
     frameDataPtr->positions      = m_geometry.positionsAddress();
     frameDataPtr->attributes     = m_geometry.attributesAddress();
     frameDataPtr->colors         = m_geometry.colorsAddress();
-    frameDataPtr->materials      = m_resources.materialBufferAddress();
+    frameDataPtr->materials      = m_resources.materials().address();
     frameDataPtr->subMeshes      = m_geometry.subMeshesAddress();
     frameDataPtr->time           =  std::chrono::duration<float>(std::chrono::steady_clock::now() - m_startTime).count();
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
 
 
     m_extract.write(scene, frame.arena);
+    m_resources.materials().stage(frame.arena);
     const DrawList draws = writeDrawCommands(frame);
 
     const PushConstants pc {frameAlloc.address, m_extract.instancesAddress()};
@@ -249,6 +250,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
     m_gpuProfiler.beginFrame(cmd, static_cast<uint32_t>(m_frameNumber % FramesInFlight));
     m_extract.recordUploads(cmd);
+    m_resources.materials().recordUploads(cmd);
 
     const VkExtent2D extent = m_swapchain.extent();
     const VkImage swapchainImage = m_swapchain.image(imageIndex);

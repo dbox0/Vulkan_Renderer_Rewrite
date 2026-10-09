@@ -33,7 +33,7 @@ void ResourceStore::initialize()
     createDescriptorSets();
     createFallbackTexture();
 
-    addMaterial(Material
+    m_materials.init(m_ctx, Material
     {
         .baseColor = glm::vec4(1.0f),
         .textureIndex = textureDescriptorSlot(m_fallbackTextureId),
@@ -71,13 +71,9 @@ void ResourceStore::shutdown()
     m_samplers.clear();
     m_samplerInfos.clear();
 
-    for (gfx::Buffer &buff : m_buffers) {
-        m_ctx.retire(buff);
-    }
-    m_buffers.clear();
+    m_materials.destroy(m_ctx);
 
     m_textures.clear();
-    m_materials.clear();
     m_freeTextureIds.clear();
     m_pendingTextureWrites.clear();
 }
@@ -90,11 +86,6 @@ void ResourceStore::clearModelData()
     }
     m_images.resize(m_fallbackImageId);
 
-    for (gfx::Buffer &buff : m_buffers) {
-        m_ctx.retire(buff);
-    }
-    m_buffers.clear();
-    m_materialBufferId = 0;
 
     std::vector<uint32_t> deadSlots;
     for (uint32_t id = m_fallbackTextureId + 1; id <= m_textures.size(); ++id) {
@@ -109,7 +100,7 @@ void ResourceStore::clearModelData()
         m_ctx.retire([this, slots = std::move(deadSlots)] { releaseTextureSlots(slots); });
     }
 
-    m_materials.resize(1);
+    m_materials.releaseAll();
 }
 
 void ResourceStore::releaseTextureSlots(const std::vector<uint32_t> &ids)
@@ -211,18 +202,6 @@ uint32_t ResourceStore::addTexture(uint32_t imageId, uint32_t samplerId)
     return id;
 }
 
-uint32_t ResourceStore::addMaterial(const Material &material)
-{
-    m_materials.push_back(material);
-    return static_cast<uint32_t>(m_materials.size());
-}
-
-uint32_t ResourceStore::addBuffer(const gfx::Buffer &buffer)
-{
-    m_buffers.push_back(buffer);
-    return static_cast<uint32_t>(m_buffers.size());
-}
-
 uint32_t ResourceStore::textureDescriptorSlot(uint32_t textureId) const
 {
     // Descriptor array is 0-based; our IDs are 1-based. This is the ONLY
@@ -244,6 +223,18 @@ uint32_t ResourceStore::samplerDescriptorSlot(uint32_t textureId) const
         return fallbackSlot;
     }
     return samplerId - 1;
+}
+
+const gfx::Image *ResourceStore::textureImage(uint32_t descriptorSlot) const
+{
+    if (descriptorSlot == textureDescriptorSlot(m_fallbackTextureId) || descriptorSlot >= m_textures.size()) {
+        return nullptr;
+    }
+    const uint32_t imageId = m_textures[descriptorSlot].imageId;
+    if (imageId == 0 || imageId > m_images.size()) {
+        return nullptr;
+    }
+    return &m_images[imageId - 1];
 }
 
 void ResourceStore::createFallbackTexture()
@@ -386,26 +377,4 @@ void ResourceStore::updateTextureDescriptors()
 
     vkUpdateDescriptorSets(m_ctx.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     m_pendingTextureWrites.clear();
-}
-
-void ResourceStore::uploadMaterialBuffer()
-{
-    if (m_materials.empty()) {
-        return;
-    }
-
-    const size_t matDataBytes = m_materials.size() * sizeof(Material);
-
-    gfx::Buffer matBuffer = m_ctx.createBuffer(matDataBytes,
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "materials");
-    m_uploader.uploadBuffer(matBuffer, 0, m_materials.data(), matDataBytes);
-    m_materialBufferId = addBuffer(matBuffer);
-}
-
-uint64_t ResourceStore::materialBufferAddress() const
-{
-    if (!m_materialBufferId) {
-        return 0;
-    }
-    return m_buffers[m_materialBufferId - 1].address;
 }

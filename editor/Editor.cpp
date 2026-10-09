@@ -33,20 +33,35 @@ void Editor::attach(Application &app)
     m_app = &app;
     gfx::Context &ctx = app.context();
 
+    constexpr uint32_t PoolSets = ResourceStore::MaxTextures + 16;
     const VkDescriptorPoolSize poolSize
     {
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 16
+        .descriptorCount = PoolSets
     };
     const VkDescriptorPoolCreateInfo poolInfo
     {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-        .maxSets = 16,
+        .maxSets = PoolSets,
         .poolSizeCount = 1,
         .pPoolSizes = &poolSize
     };
     VK_CHECK(vkCreateDescriptorPool(ctx.device(), &poolInfo, nullptr, &m_pool));
+
+    const VkSamplerCreateInfo samplerInfo
+    {
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .maxLod = VK_LOD_CLAMP_NONE
+    };
+    VK_CHECK(vkCreateSampler(ctx.device(), &samplerInfo, nullptr, &m_thumbnailSampler));
+    ctx.setName(VK_OBJECT_TYPE_SAMPLER, m_thumbnailSampler, "editor thumbnails");
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -104,6 +119,10 @@ void Editor::detach()
         return;
     }
     VK_CHECK(vkDeviceWaitIdle(m_app->context().device()));
+    retireThumbnails();
+    collectThumbnails(true);
+    vkDestroySampler(m_app->context().device(), m_thumbnailSampler, nullptr);
+    m_thumbnailSampler = VK_NULL_HANDLE;
 
     m_app->renderer().setOverlay(nullptr);
     m_app->setLayer(nullptr);
@@ -163,6 +182,7 @@ void Editor::onUpdate(float)
     if (pending) {
         m_app->requestLoad(*pending);
     }
+    collectThumbnails(false);
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -214,6 +234,22 @@ void Editor::drawMenuBar()
 void Editor::drawScenePanel()
 {
     ImGui::Begin("Scene");
+    if (ImGui::BeginTabBar("SceneTabs")) {
+        if (ImGui::BeginTabItem("Scene")) {
+            drawSceneTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Materials")) {
+            drawMaterialsTab();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::End();
+}
+
+void Editor::drawSceneTab()
+{
 
     const std::filesystem::path &currentModel = m_app->currentModel();
     if (m_app->isLoading()) {
@@ -231,7 +267,7 @@ void Editor::drawScenePanel()
     ImGui::TextDisabled("or drop a file on the window");
 
     ImGui::SeparatorText("Model");
-    ImGui::Text("%zu meshes, %zu materials", m_app->geometry().liveMeshCount(), m_app->resources().materialCount());
+    ImGui::Text("%zu meshes, %u materials", m_app->geometry().liveMeshCount(), m_app->resources().materials().used());
 
     scene::Scene &scene = m_app->scene();
     if (const scene::NodeHandle root = m_app->modelRoot(); scene.alive(root)) {
@@ -294,8 +330,123 @@ void Editor::drawScenePanel()
         ImGui::EndCombo();
     }
     ImGui::TextDisabled("FIFO is capped at the refresh rate");
+}
 
-    ImGui::End();
+void Editor::drawMaterialsTab()
+{
+    ResourceStore         &resources = m_app->resources();
+    render::MaterialTable &materials = resources.materials();
+
+    if (m_thumbnailEpoch != m_app->scene().epoch()) {
+        m_thumbnailEpoch = m_app->scene().epoch();
+        retireThumbnails();
+        m_selectedMaterial = 0;
+    }
+
+    m_materialSlots.assign(1, 0);
+    for (const core::Range &range : materials.ranges()) {
+        for (uint64_t i = 0; i < range.count; ++i) {
+            m_materialSlots.push_back(static_cast<uint32_t>(range.offset + i));
+        }
+    }
+    if (std::find(m_materialSlots.begin(), m_materialSlots.end(), m_selectedMaterial) == m_materialSlots.end()) {
+        m_selectedMaterial = 0;
+    }
+
+    ImGui::Text("%zu materials", m_materialSlots.size());
+
+    const ImGuiStyle &style = ImGui::GetStyle();
+    constexpr float ThumbnailSize = 64.0f;
+    const ImVec2 imageSize(ThumbnailSize, ThumbnailSize);
+    const ImVec2 cellSize(ThumbnailSize + 2.0f * style.FramePadding.x, ThumbnailSize + 2.0f * style.FramePadding.y);
+
+    if (ImGui::BeginChild("MaterialGrid", ImVec2(0.0f, ImGui::GetContentRegionAvail().y * 0.55f), ImGuiChildFlags_Borders)) {
+        const float available = ImGui::GetContentRegionAvail().x;
+        const int columns = std::max(1, static_cast<int>((available + style.ItemSpacing.x) / (cellSize.x + style.ItemSpacing.x)));
+
+        for (size_t n = 0; n < m_materialSlots.size(); ++n) {
+            const uint32_t  slot     = m_materialSlots[n];
+            const Material &material = materials.read(slot);
+            const ImVec4    tint(material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a);
+
+            if (n % static_cast<size_t>(columns) != 0) {
+                ImGui::SameLine();
+            }
+            ImGui::PushID(static_cast<int>(slot));
+            bool clicked = false;
+            if (const gfx::Image *image = resources.textureImage(material.textureIndex)) {
+                clicked = ImGui::ImageButton("thumbnail", (ImTextureID)thumbnail(image->view), imageSize,
+                                             ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), tint);
+            } else {
+                clicked = ImGui::ColorButton("thumbnail", tint, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_AlphaPreviewHalf, cellSize);
+            }
+            if (slot == m_selectedMaterial) {
+                ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                                                    ImGui::GetColorU32(ImGuiCol_CheckMark), style.FrameRounding, 0, 2.0f);
+            }
+            if (clicked) {
+                m_selectedMaterial = slot;
+            }
+            const std::string_view name = materials.name(slot);
+            ImGui::SetItemTooltip("%u: %.*s", slot, static_cast<int>(name.size()), name.data());
+            ImGui::PopID();
+        }
+    }
+    ImGui::EndChild();
+
+    const std::string_view name = materials.name(m_selectedMaterial);
+    ImGui::SeparatorText("Selected material");
+    ImGui::Text("Slot %u: %.*s", m_selectedMaterial, static_cast<int>(name.size()), name.data());
+
+    Material material = materials.read(m_selectedMaterial);
+    if (const gfx::Image *image = resources.textureImage(material.textureIndex)) {
+        const ImVec4 tint(material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a);
+        ImGui::ImageWithBg((ImTextureID)thumbnail(image->view), ImVec2(128.0f, 128.0f), ImVec2(0.0f, 0.0f),
+                           ImVec2(1.0f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), tint);
+        ImGui::SameLine();
+        ImGui::Text("Base color texture\n%u x %u, %u mips", image->extent.width, image->extent.height, image->mipLevels);
+    } else {
+        ImGui::TextDisabled("No base color texture");
+    }
+
+    if (ImGui::ColorEdit4("Base color", &material.baseColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf)) {
+        materials.write(m_selectedMaterial, material);
+    }
+}
+
+VkDescriptorSet Editor::thumbnail(VkImageView view)
+{
+    const auto it = m_thumbnails.find(view);
+    if (it != m_thumbnails.end()) {
+        return it->second;
+    }
+    const VkDescriptorSet set = ImGui_ImplVulkan_AddTexture(m_thumbnailSampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    m_thumbnails.emplace(view, set);
+    return set;
+}
+
+void Editor::retireThumbnails()
+{
+    const uint64_t safeAfter = m_app->context().queue().lastSubmitted() + 1;
+    for (const auto &[view, set] : m_thumbnails) {
+        m_retiredThumbnails.push_back({ set, safeAfter });
+    }
+    m_thumbnails.clear();
+}
+
+void Editor::collectThumbnails(bool all)
+{
+    if (m_retiredThumbnails.empty()) {
+        return;
+    }
+    const uint64_t completed = all ? UINT64_MAX : m_app->context().queue().completed();
+    std::erase_if(m_retiredThumbnails, [&](const RetiredThumbnail &retired) {
+        if (retired.safeAfter > completed) {
+            return false;
+        }
+        ImGui_ImplVulkan_RemoveTexture(retired.set);
+        return true;
+    });
 }
 
 void Editor::frameModel()

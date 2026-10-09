@@ -57,7 +57,10 @@ add_library(render STATIC
         render/SceneExtract.cpp
         render/SceneExtract.h
         render/Instantiate.cpp
-        render/Instantiate.h)
+        render/Instantiate.h
+        render/DeviceTable.h
+        render/MaterialTable.cpp
+        render/MaterialTable.h)
 target_link_libraries(render PUBLIC gfx scene assets)
 # shaders/shared/GpuTypes.h compiled by both C++ and GLSL.
 target_include_directories(render PUBLIC ${PROJECT_SOURCE_DIR}/shaders)

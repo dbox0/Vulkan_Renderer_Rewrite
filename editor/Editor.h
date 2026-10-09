@@ -1,7 +1,10 @@
 #pragma once
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 #include "AppLayer.h"
 #include "gfx/Vk.h"
@@ -26,11 +29,29 @@ private:
     void showOpenDialog();
     void drawMenuBar();
     void drawScenePanel();
+    void drawSceneTab();
+    void drawMaterialsTab();
     void frameModel();
+
+    VkDescriptorSet thumbnail(VkImageView view);
+    void            retireThumbnails();
+    void            collectThumbnails(bool all);
 
     Application     *m_app  = nullptr;
     VkDescriptorPool m_pool = VK_NULL_HANDLE;
 
     std::mutex                           m_pendingMutex;   // the file dialog answers on its own thread
     std::optional<std::filesystem::path> m_pendingModel;
+
+    struct RetiredThumbnail
+    {
+        VkDescriptorSet set;
+        uint64_t        safeAfter;
+    };
+    VkSampler                                        m_thumbnailSampler = VK_NULL_HANDLE;
+    std::unordered_map<VkImageView, VkDescriptorSet> m_thumbnails;
+    std::vector<RetiredThumbnail>                    m_retiredThumbnails;
+    uint64_t                                         m_thumbnailEpoch   = 0;
+    uint32_t                                         m_selectedMaterial = 0;
+    std::vector<uint32_t>                            m_materialSlots;
 };

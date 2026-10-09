@@ -6,7 +6,6 @@
 #include <glm/mat3x4.hpp>
 
 #include "GeometryStore.h"
-#include "gfx/Barriers.h"
 #include "gfx/Context.h"
 #include "gfx/FrameArena.h"
 #include "scene/Scene.h"
@@ -15,18 +14,6 @@ namespace render {
 
 namespace
 {
-
-void appendCopy(std::vector<VkBufferCopy> &copies, const VkBufferCopy &region)
-{
-    if (!copies.empty()) {
-        VkBufferCopy &last = copies.back();
-        if (last.srcOffset + last.size == region.srcOffset && last.dstOffset + last.size == region.dstOffset) {
-            last.size += region.size;
-            return;
-        }
-    }
-    copies.push_back(region);
-}
 
 const Mesh *meshOf(const scene::ComponentTable<scene::MeshRenderer> &renderers, const GeometryStore &geometry,
                    uint32_t node)
@@ -39,14 +26,12 @@ const Mesh *meshOf(const scene::ComponentTable<scene::MeshRenderer> &renderers, 
 
 void SceneExtract::init()
 {
-    m_instances = m_ctx.createBuffer(VkDeviceSize{ MaxInstances } * sizeof(Instance),
-        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        gfx::MemoryIntent::GpuOnly, "instances");
+    m_instances.init(m_ctx, MaxInstances, "instances");
 }
 
 void SceneExtract::shutdown()
 {
-    m_ctx.destroyBuffer(m_instances);
+    m_instances.destroy(m_ctx);
 }
 
 void SceneExtract::collect(const scene::Scene &scene)
@@ -82,7 +67,6 @@ void SceneExtract::collect(const scene::Scene &scene)
 
 void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
 {
-    m_copies.clear();
     m_stats = {};
 
     const scene::ComponentTable<scene::MeshRenderer> &renderers = scene.components<scene::MeshRenderer>();
@@ -97,23 +81,14 @@ void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
             continue;
         }
         const auto count = static_cast<uint32_t>(std::min<uint64_t>(range.count, mesh->subMeshes.size()));
-        const VkDeviceSize bytes = VkDeviceSize{ count } * sizeof(Instance);
-
-        const gfx::ArenaAllocation allocation = arena.allocate(bytes);
-        auto *records = static_cast<Instance *>(allocation.cpu);
-
         const glm::mat4   &world = worlds[node];
         const glm::mat4    rows  = glm::transpose(world);
         const glm::mat3x4  packed(rows[0], rows[1], rows[2]);
         const auto         firstTableEntry = static_cast<uint32_t>(mesh->table.offset);
+        const auto         firstSlot       = static_cast<uint32_t>(range.offset);
         for (uint32_t u = 0; u < count; ++u) {
-            records[u] = Instance{ .worldMatrix = packed, .subMesh = firstTableEntry + u, .node = node };
+            m_instances.write(firstSlot + u, Instance{ .worldMatrix = packed, .subMesh = firstTableEntry + u, .node = node });
         }
-
-        appendCopy(m_copies, VkBufferCopy{ .srcOffset = allocation.offset,
-                                           .dstOffset = range.offset * sizeof(Instance),
-                                           .size = bytes });
-        m_copySource = allocation.buffer;
         m_stats.written += count;
 
         const uint8_t mirrored = glm::determinant(glm::mat3(world)) < 0.0f ? 1 : 0;
@@ -129,7 +104,8 @@ void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
         m_rebuildPending = false;
     }
 
-    m_stats.copyRegions = static_cast<uint32_t>(m_copies.size());
+    m_instances.stage(arena);
+    m_stats.copyRegions = m_instances.copyCount();
     m_stats.live = m_slots.liveInstances();
 }
 
@@ -171,18 +147,7 @@ void SceneExtract::rebuildCommands(const scene::Scene &scene)
 
 void SceneExtract::recordUploads(VkCommandBuffer cmd) const
 {
-    if (m_copies.empty()) {
-        return;
-    }
-    gfx::bufferBarrier(cmd, m_instances.buffer,
-        VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_NONE,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-
-    vkCmdCopyBuffer(cmd, m_copySource, m_instances.buffer, static_cast<uint32_t>(m_copies.size()), m_copies.data());
-
-    gfx::bufferBarrier(cmd, m_instances.buffer,
-        VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+    m_instances.recordUploads(cmd, VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT);
 }
 
 }

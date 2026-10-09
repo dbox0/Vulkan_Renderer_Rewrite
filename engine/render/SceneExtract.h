@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
+#include "DeviceTable.h"
 #include "InstanceSlots.h"
+#include "shared/GpuTypes.h"
 #include "gfx/Resources.h"
 #include "gfx/Vk.h"
 #include <span>
@@ -33,7 +35,7 @@ namespace render
         void write(const scene::Scene &scene, gfx::FrameArena &arena);
         void recordUploads(VkCommandBuffer cmd) const;
 
-        VkDeviceAddress instancesAddress() const { return m_instances.address; }
+        VkDeviceAddress instancesAddress() const { return m_instances.address(); }
         std::span<const VkDrawIndexedIndirectCommand> commands() const { return m_commands; }
         uint32_t firstMirrored() const { return m_firstMirrored; }
 
@@ -46,12 +48,10 @@ namespace render
         gfx::Context        &m_ctx;
         const GeometryStore &m_geometry;
 
-        gfx::Buffer   m_instances;
+        DeviceTable<Instance> m_instances;
         InstanceSlots m_slots{ MaxInstances };
         uint64_t      m_sceneEpoch = 0;
 
-        VkBuffer                  m_copySource = VK_NULL_HANDLE;
-        std::vector<VkBufferCopy> m_copies;
         std::vector<VkDrawIndexedIndirectCommand> m_commands;
         std::vector<VkDrawIndexedIndirectCommand> m_mirroredCommands;
         std::vector<uint8_t>      m_mirrored;

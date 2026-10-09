@@ -98,7 +98,6 @@ void Application::pollLoad()
 
     m_modelRoot = render::instantiate(*result.scene, m_pendingPath.stem().string(), m_scene, m_resources, m_geometry);
     m_resources.updateTextureDescriptors();
-    m_resources.uploadMaterialBuffer();
     m_uploader.flush();
     m_currentModel = m_modelRoot.valid() ? m_pendingPath : std::filesystem::path{};
     const std::chrono::duration<double, std::milli> uploadTime = std::chrono::steady_clock::now() - uploadStart;
@@ -106,7 +105,7 @@ void Application::pollLoad()
     core::log(std::format("Loaded {}: parse {:.1f} ms, meshes {:.1f} ms, images {:.1f} ms, upload {:.1f} ms",
                           m_pendingPath.filename().string(), result.parseMs, result.meshesMs, result.imagesMs,
                           uploadTime.count()));
-    core::log(std::format("Loaded {} meshes, {} materials", m_geometry.liveMeshCount(), m_resources.materialCount()));
+    core::log(std::format("Loaded {} meshes, {} materials", m_geometry.liveMeshCount(), m_resources.materials().used()));
     const core::RangeAllocator &vertices = m_geometry.vertexAllocator();
     const core::RangeAllocator &indices  = m_geometry.indexAllocator();
     core::log(std::format("Geometry: {} of {} vertices used (largest free {}), {} of {} indices used (largest free {})",

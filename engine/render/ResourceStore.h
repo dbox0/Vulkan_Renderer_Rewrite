@@ -3,6 +3,7 @@
 #include <span>
 #include <vector>
 
+#include "MaterialTable.h"
 #include "Types.h"
 #include "gfx/Resources.h"
 
@@ -41,8 +42,6 @@ public:
     uint32_t addImage(std::span<const gfx::ImageLevel> levels, VkFormat format);
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
-    uint32_t addMaterial(const Material &material);
-    uint32_t addBuffer(const gfx::Buffer &buffer);
 
     uint32_t fallbackImageId()   const { return m_fallbackImageId; }
     uint32_t fallbackSamplerId() const { return m_fallbackSamplerId; }
@@ -51,20 +50,17 @@ public:
     // Converts a 1-based texture ID to the 0-based descriptor array slot the
     // shader uses. Returns the fallback slot for id 0 or out-of-range.
     uint32_t textureDescriptorSlot(uint32_t textureId) const;
-    uint32_t materialShaderIndex(uint32_t materialId) const { return materialId ? materialId - 1 : 0; }
     uint32_t samplerDescriptorSlot(uint32_t textureId) const;
 
-    const gfx::Buffer &buffer(uint32_t bufferId) const { return m_buffers[bufferId - 1]; }
-    size_t materialCount() const { return m_materials.size(); }
-    const std::vector<Material> &materials() const { return m_materials; }
+    const gfx::Image *textureImage(uint32_t descriptorSlot) const;
+
+    render::MaterialTable       &materials()       { return m_materials; }
+    const render::MaterialTable &materials() const { return m_materials; }
 
     void updateTextureDescriptors();       // writes the textures added since the last call into binding 0
     VkDescriptorSet       globalDescriptorSet() const { return m_globalDescSet; }
     VkDescriptorSetLayout globalLayout()        const { return m_globalLayout; }
 
-    // Uploads m_materials into a buffer. called after all glTF loading.
-    void uploadMaterialBuffer();
-    uint64_t materialBufferAddress() const;
 
 private:
     void createDescriptorSets();
@@ -78,15 +74,13 @@ private:
     std::vector<VkSampler>   m_samplers;
     std::vector<VkSamplerCreateInfo> m_samplerInfos;
     std::vector<Texture>     m_textures;
-    std::vector<Material>    m_materials;
-    std::vector<gfx::Buffer> m_buffers;
+    render::MaterialTable    m_materials;
     std::vector<uint32_t>    m_freeTextureIds;
     std::vector<uint32_t>    m_pendingTextureWrites;
 
     uint32_t m_fallbackImageId   = 0;
     uint32_t m_fallbackSamplerId = 0;
     uint32_t m_fallbackTextureId = 0;
-    uint32_t m_materialBufferId  = 0;
 
     VkDescriptorPool      m_descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_globalLayout   = VK_NULL_HANDLE;

@@ -1,6 +1,7 @@
 #include "Instantiate.h"
 
 #include <format>
+#include <optional>
 #include <vector>
 
 #include "GeometryStore.h"
@@ -118,19 +119,29 @@ scene::NodeHandle instantiate(const assets::ImportedScene &imported, std::string
         textureIds.push_back(resources.addTexture(imageId, samplerId));
     }
 
-    std::vector<uint32_t> materialSlots;
-    materialSlots.reserve(imported.materials.size());
-    for (const assets::ImportedMaterial &material : imported.materials) {
+    MaterialTable &materials = resources.materials();
+    const auto materialCount = static_cast<uint32_t>(imported.materials.size());
+    const std::optional<core::Range> materialRange = materials.allocate(materialCount);
+    if (!materialRange) {
+        core::warn(std::format("'{}' needs {} materials but the table is full; using the default material",
+                               rootName, materialCount));
+    }
+
+    std::vector<uint32_t> materialSlots(imported.materials.size(), 0);
+    for (uint32_t i = 0; materialRange && i < materialCount; ++i) {
+        const assets::ImportedMaterial &material = imported.materials[i];
         const uint32_t textureId = inRange(material.baseColorTexture, textureIds)
             ? textureIds[static_cast<size_t>(material.baseColorTexture)]
             : resources.fallbackTextureId();
-        const uint32_t materialId = resources.addMaterial(Material
+        const auto slot = static_cast<uint32_t>(materialRange->offset) + i;
+        materials.write(slot, Material
         {
             .baseColor = material.baseColorFactor,
             .textureIndex = resources.textureDescriptorSlot(textureId),
             .samplerIndex = resources.samplerDescriptorSlot(textureId)
         });
-        materialSlots.push_back(resources.materialShaderIndex(materialId));
+        materials.setName(slot, material.name);
+        materialSlots[i] = slot;
     }
 
     std::vector<MeshHandle> meshes;
