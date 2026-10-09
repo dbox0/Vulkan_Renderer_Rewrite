@@ -379,14 +379,15 @@ namespace gfx {
         vkSetDebugUtilsObjectNameEXT(m_device, &info);
     }
 
-    Image Context::createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name) const {
+    Image Context::createImage(VkExtent2D extent, VkFormat format, VkImageUsageFlags usage, const char *name,
+                               uint32_t mipLevels) const {
         const VkImageCreateInfo imageInfo
         {
             .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
             .imageType = VK_IMAGE_TYPE_2D,
             .format = format,
             .extent{.width = extent.width, .height = extent.height, .depth = 1},
-            .mipLevels = 1,
+            .mipLevels = mipLevels,
             .arrayLayers = 1,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -395,7 +396,7 @@ namespace gfx {
         };
         const VmaAllocationCreateInfo allocInfo{.usage = VMA_MEMORY_USAGE_AUTO};
 
-        Image image{.format = format, .extent = extent, .mipLevels = 1};
+        Image image{.format = format, .extent = extent, .mipLevels = mipLevels};
         VK_CHECK(vmaCreateImage(m_allocator, &imageInfo, &allocInfo, &image.image, &image.allocation, nullptr));
 
         const VkImageViewCreateInfo viewInfo

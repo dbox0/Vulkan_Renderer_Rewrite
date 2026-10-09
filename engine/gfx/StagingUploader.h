@@ -1,5 +1,6 @@
 #pragma once
 #include <deque>
+#include <span>
 #include <vector>
 #include <cstdint>
 #include "gfx/Vk.h"
@@ -24,7 +25,7 @@ namespace gfx {
         void destroy();
 
         void uploadBuffer(const Buffer &dst, VkDeviceSize dstOffset, const void* data, VkDeviceSize size);
-        void uploadImage(const Image &dst, const void* pixels, VkDeviceSize size);
+        void uploadImage(const Image &dst, std::span<const ImageLevel> levels);
         uint64_t flush();
 
         uint64_t lastValue() const { return m_lastValue; }

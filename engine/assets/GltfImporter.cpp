@@ -7,6 +7,7 @@
 #include <cstring>
 #include <format>
 #include <numeric>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -18,7 +19,10 @@
 #include <stb_image.h>
 #include <tiny_gltf_v3.h>
 
+#include "Mips.h"
+#include "core/File.h"
 #include "core/Parallel.h"
+#include "core/Uri.h"
 
 namespace assets {
 
@@ -438,36 +442,94 @@ void assignColorSpaces(const tg3_model &model, std::vector<ImportedImage> &image
     }
 }
 
+struct EncodedImage
+{
+    std::vector<std::byte> owned;
+    const std::byte       *data = nullptr;
+    size_t                 size = 0;
+};
+
+std::optional<EncodedImage> readEncodedImage(const tg3_model &model, const tg3_image &image,
+                                             const std::filesystem::path &baseDir, std::string &error)
+{
+    EncodedImage encoded;
+    if (image.buffer_view >= 0) {
+        const tg3_buffer_view &bufferView = model.buffer_views[image.buffer_view];
+        const tg3_buffer      &buffer     = model.buffers[bufferView.buffer];
+        if (bufferView.byte_offset + bufferView.byte_length > buffer.data.count) {
+            error = "its buffer view runs past the end of the buffer";
+            return std::nullopt;
+        }
+        encoded.data = reinterpret_cast<const std::byte *>(buffer.data.data + bufferView.byte_offset);
+        encoded.size = static_cast<size_t>(bufferView.byte_length);
+        return encoded;
+    }
+
+    const std::string_view uri = view(image.uri);
+    if (uri.empty()) {
+        error = "it has neither a URI nor a buffer view";
+        return std::nullopt;
+    }
+
+    if (uri.starts_with("data:")) {
+        constexpr std::string_view Marker = ";base64,";
+        const size_t marker = uri.find(Marker);
+        if (marker == std::string_view::npos) {
+            error = "its data URI is not base64";
+            return std::nullopt;
+        }
+        std::optional<std::vector<std::byte>> bytes = core::base64Decode(uri.substr(marker + Marker.size()));
+        if (!bytes) {
+            error = "its data URI is not valid base64";
+            return std::nullopt;
+        }
+        encoded.owned = std::move(*bytes);
+    } else {
+        const std::filesystem::path path = baseDir / std::filesystem::path(core::percentDecode(uri));
+        std::optional<std::vector<std::byte>> bytes = core::readFile(path);
+        if (!bytes) {
+            error = std::format("{} could not be read", path.string());
+            return std::nullopt;
+        }
+        encoded.owned = std::move(*bytes);
+    }
+    encoded.data = encoded.owned.data();
+    encoded.size = encoded.owned.size();
+    return encoded;
+}
+
 void decodeImages(const tg3_model &model, const std::filesystem::path &baseDir,
                   std::vector<ImportedImage> &images, std::vector<std::string> &warnings)
 {
-    for (uint32_t i = 0; i < model.images_count; ++i) {
-        const tg3_image &gltfImage = model.images[i];
+    std::vector<std::string> errors(images.size());
+    core::parallelFor(static_cast<uint32_t>(images.size()), [&](uint32_t i) {
         ImportedImage &image = images[i];
-
-        const std::string_view uri = view(gltfImage.uri);
-        if (gltfImage.buffer_view >= 0 || uri.empty() || uri.starts_with("data:")) {
-            warnings.push_back(std::format("Image '{}' is embedded; embedded images are not supported yet", image.name));
-            continue;
+        const std::optional<EncodedImage> encoded = readEncodedImage(model, model.images[i], baseDir, errors[i]);
+        if (!encoded) {
+            return;
+        }
+        if (encoded->size > static_cast<size_t>(INT32_MAX)) {
+            errors[i] = "it is too large";
+            return;
         }
 
-        const std::filesystem::path path = baseDir / std::filesystem::path(std::string(uri));
         int width = 0;
         int height = 0;
         int channels = 0;
-        stbi_uc *pixels = stbi_load(path.string().c_str(), &width, &height, &channels, 4);
+        stbi_uc *pixels = stbi_load_from_memory(reinterpret_cast<const stbi_uc *>(encoded->data),
+                                                static_cast<int>(encoded->size), &width, &height, &channels, 4);
         if (!pixels) {
-            warnings.push_back(std::format("Image '{}' could not be decoded: {}", path.string(), stbi_failure_reason()));
-            continue;
+            errors[i] = std::format("stb_image could not decode it ({})", stbi_failure_reason());
+            return;
         }
-        const size_t bytes = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-        image.mips.push_back(MipLevel
-        {
-            .width = static_cast<uint32_t>(width),
-            .height = static_cast<uint32_t>(height),
-            .rgba = std::vector<uint8_t>(pixels, pixels + bytes)
-        });
+        image.mips = generateMips(pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height), image.colorSpace);
         stbi_image_free(pixels);
+    });
+
+    for (size_t i = 0; i < errors.size(); ++i) {
+        if (!errors[i].empty()) {
+            warnings.push_back(std::format("Image '{}' not loaded: {}", images[i].name, errors[i]));
+        }
     }
 }
 

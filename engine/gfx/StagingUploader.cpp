@@ -194,24 +194,43 @@ namespace gfx {
         }
     }
 
-    void StagingUploader::uploadImage(const Image &dst, const void *pixels, VkDeviceSize size) {
+    void StagingUploader::uploadImage(const Image &dst, std::span<const ImageLevel> levels) {
+        if (levels.size() != dst.mipLevels) {
+            core::fatal(std::format("uploadImage: {} levels given for an image with {} mip levels", levels.size(), dst.mipLevels));
+        }
+
+        std::vector<VkDeviceSize> offsets(levels.size());
+        VkDeviceSize total = 0;
+        for (size_t i = 0; i < levels.size(); ++i) {
+            total = alignUp(total, UploadAlign);
+            offsets[i] = total;
+            total += levels[i].size;
+        }
+
         VkBuffer srcBuffer = VK_NULL_HANDLE;
         VkDeviceSize srcOffset = 0;
+        uint8_t *mapped = nullptr;
 
-        if (size > m_ringSize / 2) {
-            const Buffer big = m_ctx->createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "Staging One-Off");
-            std::memcpy(big.mapped, pixels, size);
-            flushMapped(*m_ctx, big, 0, VK_WHOLE_SIZE);
+        if (total > m_ringSize / 2) {
+            const Buffer big = m_ctx->createBuffer(total, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, MemoryIntent::Upload, "Staging One-Off");
             m_oneOff.push_back(big);
             openBatch();
             srcBuffer = big.buffer;
+            mapped = static_cast<uint8_t *>(big.mapped);
+            for (size_t i = 0; i < levels.size(); ++i) {
+                std::memcpy(mapped + offsets[i], levels[i].data, levels[i].size);
+            }
+            flushMapped(*m_ctx, big, 0, VK_WHOLE_SIZE);
         } else {
-            const Allocation a = allocate(size, UploadAlign);
+            const Allocation a = allocate(total, UploadAlign);
             openBatch();
-            std::memcpy(a.cpu, pixels, size);
-            flushMapped(*m_ctx, m_ring, a.offset, size);
             srcBuffer = m_ring.buffer;
             srcOffset = a.offset;
+            mapped = static_cast<uint8_t *>(a.cpu);
+            for (size_t i = 0; i < levels.size(); ++i) {
+                std::memcpy(mapped + offsets[i], levels[i].data, levels[i].size);
+            }
+            flushMapped(*m_ctx, m_ring, a.offset, total);
         }
 
         const VkImageSubresourceRange range{
@@ -242,19 +261,23 @@ namespace gfx {
         };
         vkCmdPipelineBarrier2(m_cmd, &toTransferDep);
 
-        const VkBufferImageCopy2 region{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
-            .bufferOffset = srcOffset,
-            .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
-            .imageExtent = {dst.extent.width, dst.extent.height, 1}
-        };
+        std::vector<VkBufferImageCopy2> regions;
+        regions.reserve(levels.size());
+        for (size_t i = 0; i < levels.size(); ++i) {
+            regions.push_back(VkBufferImageCopy2{
+                .sType = VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2,
+                .bufferOffset = srcOffset + offsets[i],
+                .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, static_cast<uint32_t>(i), 0, 1},
+                .imageExtent = {levels[i].extent.width, levels[i].extent.height, 1}
+            });
+        }
         const VkCopyBufferToImageInfo2 copy{
             .sType = VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2,
             .srcBuffer = srcBuffer,
             .dstImage = dst.image,
             .dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            .regionCount = 1,
-            .pRegions = &region
+            .regionCount = static_cast<uint32_t>(regions.size()),
+            .pRegions = regions.data()
         };
         vkCmdCopyBufferToImage2(m_cmd, &copy);
 

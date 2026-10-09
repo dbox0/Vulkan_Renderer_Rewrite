@@ -85,15 +85,20 @@ scene::NodeHandle instantiate(const assets::ImportedScene &imported, std::string
 
     std::vector<uint32_t> imageIds;
     imageIds.reserve(imported.images.size());
+    std::vector<gfx::ImageLevel> levels;
     for (const assets::ImportedImage &image : imported.images) {
         if (image.mips.empty()) {
             imageIds.push_back(resources.fallbackImageId());
             continue;
         }
-        const assets::MipLevel &base = image.mips.front();
+        levels.clear();
+        for (const assets::MipLevel &mip : image.mips) {
+            levels.push_back(gfx::ImageLevel{ .data = mip.rgba.data(), .size = mip.rgba.size(),
+                                              .extent = { mip.width, mip.height } });
+        }
         const VkFormat format = image.colorSpace == assets::ColorSpace::Srgb ? VK_FORMAT_R8G8B8A8_SRGB
                                                                              : VK_FORMAT_R8G8B8A8_UNORM;
-        imageIds.push_back(resources.addImage(base.rgba.data(), base.width, base.height, format));
+        imageIds.push_back(resources.addImage(levels, format));
     }
 
     std::vector<uint32_t> samplerIds;

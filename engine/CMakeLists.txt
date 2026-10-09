@@ -5,7 +5,9 @@ add_library(core STATIC
         core/Handle.h
         core/Parallel.cpp
         core/Parallel.h
-        core/Transform.h)
+        core/Transform.h
+        core/Uri.cpp
+        core/Uri.h)
 target_include_directories(core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(core PUBLIC glm::glm Threads::Threads)
 # Zero-to-one depth so glm's projections match Vulkan's clip space.
@@ -65,6 +67,8 @@ enable_warnings(render)
 add_library(assets STATIC
     assets/GltfImporter.cpp
     assets/ImportedScene.h
-    assets/MeshData.h)
+    assets/MeshData.h
+    assets/Mips.cpp
+    assets/Mips.h)
 target_link_libraries(assets PUBLIC core PRIVATE third_party)
 enable_warnings(assets)

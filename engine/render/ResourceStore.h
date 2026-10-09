@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "Types.h"
@@ -37,7 +38,7 @@ public:
     void clearModelData();      // keeps the fallbacks and default material
 
 
-    uint32_t addImage(const unsigned char *data, uint32_t width, uint32_t height, VkFormat format);
+    uint32_t addImage(std::span<const gfx::ImageLevel> levels, VkFormat format);
     uint32_t addSampler(const VkSamplerCreateInfo &info);
     uint32_t addTexture(uint32_t imageId, uint32_t samplerId);
     uint32_t addMaterial(const Material &material);
