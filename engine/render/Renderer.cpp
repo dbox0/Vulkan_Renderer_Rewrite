@@ -1,5 +1,6 @@
 #include "Renderer.h"
 
+#include <cstring>
 #include <format>
 
 #include "GeometryStore.h"
@@ -9,6 +10,7 @@
 #include "scene/Camera.h"
 #include "gfx/FrameArena.h"
 #include "gfx/StagingUploader.h"
+#include "scene/Scene.h"
 
 namespace render
 {
@@ -25,8 +27,8 @@ void Renderer::init(const std::filesystem::path &shaderDir, const std::filesyste
 {
     m_shaderCompiler.init({ shaderDir }, cacheDir);
     m_pipelines.init(m_ctx, m_shaderCompiler);
-    m_drawItems.reserve(1024);
     createFrames();
+    m_extract.init();
     m_gpuProfiler.init(m_ctx, FramesInFlight, MaxGpuScopes);
 
     const auto pipelineStart = std::chrono::steady_clock::now();
@@ -41,6 +43,7 @@ void Renderer::shutdown()
 {
     const VkDevice device = m_ctx.device();
 
+    m_extract.shutdown();
     m_gpuProfiler.destroy(m_ctx);
     m_ctx.destroyImage(m_depth);
     m_pipelines.destroy();
@@ -124,70 +127,26 @@ void Renderer::resizeDepthIfNeeded()
     m_depth = m_ctx.createImage(extent, DepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, "depth");
 }
 
-Renderer::DrawList Renderer::writeDrawCommands(Frame &frame)
+Renderer::DrawList Renderer::writeDrawCommands(Frame &frame) const
 {
-    const auto isMirrored = [](const glm::mat4 &world) {
-        return glm::determinant(glm::mat3(world)) < 0.0f;
+    const std::span<const VkDrawIndexedIndirectCommand> commands = m_extract.commands();
+    DrawList draws
+    {
+        .count = static_cast<uint32_t>(commands.size()),
+        .firstMirrored = m_extract.firstMirrored()
     };
-
-    DrawList draws;
-    uint32_t mirroredCount = 0;
-    for (const scene::DrawItem &item : m_drawItems) {
-        if (const Mesh *mesh = m_geometry.get(item.mesh)) {
-            const auto subMeshCount = static_cast<uint32_t>(mesh->subMeshes.size());
-            draws.count += subMeshCount;
-            if (isMirrored(item.worldMatrix)) {
-                mirroredCount += subMeshCount;
-            }
-        }
-    }
     if (draws.count == 0) {
         return draws;
     }
-    draws.firstMirrored = draws.count - mirroredCount;
-
-    draws.commands  = frame.arena.allocate(draws.count * sizeof(VkDrawIndexedIndirectCommand));
-    draws.instances = frame.arena.allocate(draws.count * sizeof(Instance));
-    auto *commands  = static_cast<VkDrawIndexedIndirectCommand *>(draws.commands.cpu);
-    auto *instances = static_cast<Instance *>(draws.instances.cpu);
-
-    uint32_t normalSlot   = 0;
-    uint32_t mirroredSlot = draws.firstMirrored;
-    for (const scene::DrawItem &item : m_drawItems) {
-        const Mesh *mesh = m_geometry.get(item.mesh);
-        if (!mesh) {
-            continue;
-        }
-
-        const glm::mat4   rows  = glm::transpose(item.worldMatrix);
-        const glm::mat3x4 world = glm::mat3x4(rows[0], rows[1], rows[2]);
-        const auto        firstTableEntry = static_cast<uint32_t>(mesh->table.offset);
-        uint32_t         &slot  = isMirrored(item.worldMatrix) ? mirroredSlot : normalSlot;
-
-        for (uint32_t u = 0; u < mesh->subMeshes.size(); ++u) {
-            const SubMesh &subMesh = mesh->subMeshes[u];
-            commands[slot] = VkDrawIndexedIndirectCommand
-            {
-                .indexCount = subMesh.indexCount,
-                .instanceCount = 1,
-                .firstIndex = subMesh.indexStart,
-                .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
-                .firstInstance = slot
-            };
-            instances[slot] = Instance
-            {
-                .worldMatrix = world,
-                .subMesh = firstTableEntry + u,
-                .node = item.nodeId
-            };
-            ++slot;
-        }
-    }
+    draws.commands = frame.arena.allocate(commands.size_bytes());
+    std::memcpy(draws.commands.cpu, commands.data(), commands.size_bytes());
     return draws;
 }
 
 void Renderer::render(const scene::Scene &scene, const Camera &camera)
 {
+    m_extract.collect(scene);
+
     if (m_swapchain.needsRecreate()) {
         if (!m_swapchain.recreate()) {
             return;
@@ -231,10 +190,10 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
 
 
-    scene.collectDrawItems(m_drawItems);
+    m_extract.write(scene, frame.arena);
     const DrawList draws = writeDrawCommands(frame);
 
-    const PushConstants pc {frameAlloc.address, draws.instances.address};
+    const PushConstants pc {frameAlloc.address, m_extract.instancesAddress()};
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
     recordFrame(frame, imageIndex, draws, pc);
@@ -289,6 +248,7 @@ void Renderer::recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, Pu
     };
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
     m_gpuProfiler.beginFrame(cmd, static_cast<uint32_t>(m_frameNumber % FramesInFlight));
+    m_extract.recordUploads(cmd);
 
     const VkExtent2D extent = m_swapchain.extent();
     const VkImage swapchainImage = m_swapchain.image(imageIndex);

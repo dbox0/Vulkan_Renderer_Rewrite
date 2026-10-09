@@ -13,12 +13,14 @@
 #include "gfx/GpuProfiler.h"
 #include "gfx/ShaderCompiler.h"
 #include "PipelineRegistry.h"
-#include "scene/Scene.h"
+#include "SceneExtract.h"
 
 
 namespace gfx {
     class StagingUploader;
 }
+
+namespace scene { class Scene; }
 
 class Camera;
 class GeometryStore;
@@ -50,6 +52,7 @@ public:
     void setOverlay(Overlay overlay) { m_overlay = std::move(overlay); }
 
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
+    const SceneExtract     &extract() const     { return m_extract; }
     uint64_t                frameNumber() const { return m_frameNumber; }
 
     void reloadShaders() { m_pipelines.reloadAll(); }
@@ -69,15 +72,13 @@ private:
         uint32_t             count = 0;
         uint32_t             firstMirrored = 0;
         gfx::ArenaAllocation commands;
-        gfx::ArenaAllocation instances;
     };
 
     void createFrames();
     void createPipeline(const std::filesystem::path &shaderDir);
     void resizeDepthIfNeeded();
 
-    // Fills this frame's indirect + render-item buffers. Returns the draw count written.
-    DrawList writeDrawCommands(Frame &frame);
+    DrawList writeDrawCommands(Frame &frame) const;
     void recordFrame(Frame &frame, uint32_t imageIndex, DrawList draws, PushConstants pc);
 
     gfx::Context   &m_ctx;
@@ -96,10 +97,9 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     gfx::Image       m_depth;
     gfx::GpuProfiler m_gpuProfiler;
+    SceneExtract     m_extract{ m_ctx, m_geometry };
 
-    uint32_t              m_maxDraws = 0;
-    std::vector<scene::DrawItem> m_drawItems;   // reused across frames
-    Overlay               m_overlay;
+    Overlay          m_overlay;
 
     std::chrono::steady_clock::time_point m_startTime = std::chrono::steady_clock::now();
 

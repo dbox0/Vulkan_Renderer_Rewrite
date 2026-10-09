@@ -44,4 +44,30 @@ inline void transition(VkCommandBuffer cmd, const ImageTransition &t)
     vkCmdPipelineBarrier2(cmd, &dependency);
 }
 
+inline void bufferBarrier(VkCommandBuffer cmd, VkBuffer buffer,
+                          VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
+                          VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess)
+{
+    const VkBufferMemoryBarrier2 barrier
+    {
+        .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .srcStageMask = srcStage,
+        .srcAccessMask = srcAccess,
+        .dstStageMask = dstStage,
+        .dstAccessMask = dstAccess,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = buffer,
+        .offset = 0,
+        .size = VK_WHOLE_SIZE
+    };
+    const VkDependencyInfo dependency
+    {
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers = &barrier
+    };
+    vkCmdPipelineBarrier2(cmd, &dependency);
+}
+
 }

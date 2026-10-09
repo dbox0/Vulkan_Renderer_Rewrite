@@ -20,7 +20,6 @@ namespace scene {
         glm::mat4  worldMatrix{1.0f};
     };
 
-
     class Scene
     {
     public:
@@ -43,6 +42,7 @@ namespace scene {
         std::span<const uint32_t>  changedNodes() const { return m_changed; }
         std::span<const glm::mat4> worlds() const { return { m_world.data(), m_count }; }
         uint64_t version() const { return m_version; }
+        uint64_t epoch() const { return m_epoch; }
         uint32_t indexCount() const { return m_count; }   // slots in use, dead ones included
         uint32_t capacity() const { return m_capacity; }
 
@@ -90,6 +90,7 @@ namespace scene {
         uint32_t m_capacity   = 0;
         uint32_t m_firstDirty = UINT32_MAX;
         uint64_t m_version    = 0;
+        uint64_t m_epoch      = 0;
         bool     m_warnedFull = false;
     };
 }

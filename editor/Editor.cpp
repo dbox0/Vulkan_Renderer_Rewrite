@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <span>
 #include <vector>
 
 #include "Application.h"
@@ -271,6 +272,10 @@ void Editor::drawScenePanel()
     ImGui::PlotLines("##frametimes", stats.data(), static_cast<int>(stats.count()), static_cast<int>(stats.oldest()),
                      nullptr, 0.0f, std::max(stats.maximum(), 1.0f) * 1.2f, ImVec2(-1.0f, 60.0f));
 
+    const render::SceneExtract::Stats instances = m_app->renderer().extract().stats();
+    ImGui::Text("Instances: %u written, %u copies, %llu live", instances.written, instances.copyRegions,
+                static_cast<unsigned long long>(instances.live));
+
     ImGui::SeparatorText("GPU");
     for (const gfx::GpuProfiler::Result &result : m_app->renderer().gpuProfiler().results()) {
         ImGui::Text("%s: %.3f ms", result.name, result.milliseconds);
@@ -292,22 +297,24 @@ void Editor::drawScenePanel()
 
 void Editor::frameModel()
 {
-    std::vector<scene::DrawItem> items;
-    m_app->scene().collectDrawItems(items);
+    const scene::Scene &scene = m_app->scene();
+    const scene::ComponentTable<scene::MeshRenderer> &renderers = scene.components<scene::MeshRenderer>();
+    const std::span<const glm::mat4> worlds = scene.worlds();
 
     glm::vec3 lo(FLT_MAX);
     glm::vec3 hi(-FLT_MAX);
     bool found = false;
-    for (const scene::DrawItem &item : items) {
-        const Mesh *mesh = m_app->geometry().get(item.mesh);
+    for (uint32_t slot = 0; slot < renderers.size(); ++slot) {
+        const Mesh *mesh = m_app->geometry().get(renderers.values()[slot].mesh);
         if (!mesh) {
             continue;
         }
-        const float maxScale = std::max({ glm::length(glm::vec3(item.worldMatrix[0])),
-                                          glm::length(glm::vec3(item.worldMatrix[1])),
-                                          glm::length(glm::vec3(item.worldMatrix[2])) });
+        const glm::mat4 &world = worlds[renderers.nodes()[slot]];
+        const float maxScale = std::max({ glm::length(glm::vec3(world[0])),
+                                          glm::length(glm::vec3(world[1])),
+                                          glm::length(glm::vec3(world[2])) });
         for (const SubMesh &subMesh : mesh->subMeshes) {
-            const glm::vec3 centre = glm::vec3(item.worldMatrix * glm::vec4(glm::vec3(subMesh.sphere), 1.0f));
+            const glm::vec3 centre = glm::vec3(world * glm::vec4(glm::vec3(subMesh.sphere), 1.0f));
             const float     radius = subMesh.sphere.w * maxScale;
             lo = glm::min(lo, centre - radius);
             hi = glm::max(hi, centre + radius);

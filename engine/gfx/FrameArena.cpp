@@ -15,7 +15,7 @@ namespace gfx {
     void FrameArena::init(gfx::Context &ctx, VkDeviceSize capacity, const char* name) {
         m_name = name;
         m_buffer = ctx.createBuffer(capacity,VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
-            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, gfx::MemoryIntent::Upload, name);
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, gfx::MemoryIntent::Upload, name);
     }
     void FrameArena::destroy(gfx::Context &ctx) {
         ctx.destroyBuffer(m_buffer);

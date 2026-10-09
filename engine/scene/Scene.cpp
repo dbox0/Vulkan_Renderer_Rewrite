@@ -86,6 +86,7 @@ namespace scene {
         m_firstDirty = UINT32_MAX;
         m_warnedFull = false;
         ++m_version;
+        ++m_epoch;
     }
 
     bool Scene::alive(NodeHandle node) const
@@ -155,16 +156,5 @@ namespace scene {
         }
         m_firstDirty = UINT32_MAX;
         ++m_version;
-    }
-
-    void Scene::collectDrawItems(std::vector<DrawItem> &out) const {
-        out.clear();
-        const ComponentTable<MeshRenderer> &renderers = components<MeshRenderer>();
-        const std::span<const uint32_t>     nodes     = renderers.nodes();
-        const std::span<const MeshRenderer> values    = renderers.values();
-        for (uint32_t slot = 0; slot < renderers.size(); ++slot) {
-            const uint32_t node = nodes[slot];
-            out.push_back(DrawItem{ .mesh = values[slot].mesh, .nodeId = node, .worldMatrix = m_world[node] });
-        }
     }
 }
