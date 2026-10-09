@@ -39,6 +39,17 @@ struct FrameData {
     uint        frameIndex;
 };
 
+struct SubMeshGpu
+{
+    uint firstIndex;
+    uint indexCount;
+    int  vertexOffset;
+    uint material;
+    vec4 sphere;
+    vec4 aabbMin;
+    vec4 aabbMax;
+};
+
 struct RenderItem
 {
     mat4 worldMatrix;
@@ -67,6 +78,15 @@ static_assert(offsetof(FrameData, colors) == 224);
 static_assert(offsetof(FrameData, materials) == 232);
 static_assert(offsetof(FrameData, time) == 240);
 static_assert(offsetof(FrameData, frameIndex) == 244);
+
+static_assert(sizeof(SubMeshGpu) == 64);
+static_assert(offsetof(SubMeshGpu, firstIndex) == 0);
+static_assert(offsetof(SubMeshGpu, indexCount) == 4);
+static_assert(offsetof(SubMeshGpu, vertexOffset) == 8);
+static_assert(offsetof(SubMeshGpu, material) == 12);
+static_assert(offsetof(SubMeshGpu, sphere) == 16);
+static_assert(offsetof(SubMeshGpu, aabbMin) == 32);
+static_assert(offsetof(SubMeshGpu, aabbMax) == 48);
 
 static_assert(sizeof(RenderItem) == 68);
 static_assert(offsetof(RenderItem, worldMatrix) == 0);

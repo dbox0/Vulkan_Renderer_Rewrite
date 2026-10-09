@@ -29,15 +29,17 @@ void GeometryStore::init()
     const VkDeviceSize attributeBytes = VkDeviceSize{ MaxVertices } * sizeof(VertexAttributes);
     const VkDeviceSize colorBytes     = VkDeviceSize{ MaxVertices } * sizeof(uint32_t);
     const VkDeviceSize indexBytes     = VkDeviceSize{ MaxIndices }  * sizeof(uint32_t);
+    const VkDeviceSize subMeshBytes   = VkDeviceSize{ MaxSubMeshes } * sizeof(SubMeshGpu);
 
     m_positionBuffer  = m_ctx.createBuffer(positionBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "positions");
     m_attributeBuffer = m_ctx.createBuffer(attributeBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "vertex attributes");
     m_colorBuffer     = m_ctx.createBuffer(colorBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "vertex colors");
     m_indexBuffer     = m_ctx.createBuffer(indexBytes,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, gfx::MemoryIntent::GpuOnly, "indices");
+    m_subMeshBuffer   = m_ctx.createBuffer(subMeshBytes, StreamUsage, gfx::MemoryIntent::GpuOnly, "submeshes");
 
     core::log(std::format("Geometry buffers: {} vertices, {} indices, {} MB",
-                          MaxVertices, MaxIndices, (positionBytes + attributeBytes + colorBytes + indexBytes) / MiB));
+                          MaxVertices, MaxIndices, (positionBytes + attributeBytes + colorBytes + indexBytes + subMeshBytes) / MiB));
 }
 
 void GeometryStore::shutdown()
@@ -46,10 +48,12 @@ void GeometryStore::shutdown()
     m_ctx.retire(m_attributeBuffer);
     m_ctx.retire(m_colorBuffer);
     m_ctx.retire(m_indexBuffer);
+    m_ctx.retire(m_subMeshBuffer);
     m_positionBuffer  = {};
     m_attributeBuffer = {};
     m_colorBuffer     = {};
     m_indexBuffer     = {};
+    m_subMeshBuffer   = {};
 }
 
 MeshHandle GeometryStore::addMesh(const MeshData &data)
@@ -77,6 +81,14 @@ MeshHandle GeometryStore::addMesh(const MeshData &data)
         warnFull(data.name, "indices", m_indexAlloc, indexCount);
         return {};
     }
+    const uint64_t subMeshCount = data.subMeshes.size();
+    const std::optional<uint64_t> tableOffset = m_subMeshAlloc.allocate(subMeshCount);
+    if (!tableOffset) {
+        m_vertexAlloc.free(*vertexOffset, vertexCount);
+        m_indexAlloc.free(*indexOffset, indexCount);
+        warnFull(data.name, "submesh entries", m_subMeshAlloc, subMeshCount);
+        return {};
+    }
 
     m_uploader.uploadBuffer(m_positionBuffer, *vertexOffset * sizeof(glm::vec3),
                             data.positions.data(), vertexCount * sizeof(glm::vec3));
@@ -92,14 +104,30 @@ MeshHandle GeometryStore::addMesh(const MeshData &data)
         .name      = data.name,
         .subMeshes = data.subMeshes,
         .vertices  = { .offset = *vertexOffset, .count = vertexCount },
-        .indices   = { .offset = *indexOffset, .count = indexCount }
+        .indices   = { .offset = *indexOffset, .count = indexCount },
+        .table     = { .offset = *tableOffset, .count = subMeshCount }
     };
     const auto vertexBase = static_cast<uint32_t>(*vertexOffset);
     const auto indexBase  = static_cast<uint32_t>(*indexOffset);
+
+    std::vector<SubMeshGpu> table;
+    table.reserve(subMeshCount);
     for (SubMesh &subMesh : mesh.subMeshes) {
         subMesh.vertexStart += vertexBase;
         subMesh.indexStart  += indexBase;
+        table.push_back(SubMeshGpu
+        {
+            .firstIndex   = subMesh.indexStart,
+            .indexCount   = subMesh.indexCount,
+            .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
+            .material     = subMesh.materialIndex,
+            .sphere       = subMesh.sphere,
+            .aabbMin      = glm::vec4(subMesh.aabbMin, 0.0f),
+            .aabbMax      = glm::vec4(subMesh.aabbMax, 0.0f)
+        });
     }
+    m_uploader.uploadBuffer(m_subMeshBuffer, *tableOffset * sizeof(SubMeshGpu),
+                            table.data(), subMeshCount * sizeof(SubMeshGpu));
 
     uint32_t index = 0;
     if (!m_freeSlots.empty()) {
@@ -132,9 +160,11 @@ void GeometryStore::removeMesh(MeshHandle handle)
     const uint32_t    index    = handle.index;
     const core::Range vertices = slot.mesh.vertices;
     const core::Range indices  = slot.mesh.indices;
-    m_ctx.retire([this, index, vertices, indices] {
+    const core::Range table    = slot.mesh.table;
+    m_ctx.retire([this, index, vertices, indices, table] {
         m_vertexAlloc.free(vertices.offset, vertices.count);
         m_indexAlloc.free(indices.offset, indices.count);
+        m_subMeshAlloc.free(table.offset, table.count);
         m_freeSlots.push_back(index);
     });
 }

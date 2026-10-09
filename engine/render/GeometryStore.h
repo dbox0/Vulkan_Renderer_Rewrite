@@ -15,6 +15,7 @@ class GeometryStore
 public:
     static constexpr uint32_t MaxVertices = 8u * 1024 * 1024;
     static constexpr uint32_t MaxIndices  = 32u * 1024 * 1024;
+    static constexpr uint32_t MaxSubMeshes = 64u * 1024;
 
     GeometryStore(gfx::Context &ctx, gfx::StagingUploader &uploader) : m_ctx(ctx), m_uploader(uploader) {}
     GeometryStore(const GeometryStore &) = delete;
@@ -37,6 +38,7 @@ public:
     uint64_t attributesAddress() const { return m_attributeBuffer.address; }
     uint64_t colorsAddress()     const { return m_colorBuffer.address; }
     VkBuffer indexBuffer()       const { return m_indexBuffer.buffer; }
+    uint64_t subMeshesAddress()  const { return m_subMeshBuffer.address; }
 
 private:
     struct Slot
@@ -51,6 +53,7 @@ private:
 
     core::RangeAllocator    m_vertexAlloc{ MaxVertices };
     core::RangeAllocator    m_indexAlloc{ MaxIndices };
+    core::RangeAllocator    m_subMeshAlloc{ MaxSubMeshes };
     std::vector<Slot>       m_slots;
     std::vector<uint32_t>   m_freeSlots;
     size_t                  m_liveMeshes = 0;
@@ -59,4 +62,5 @@ private:
     gfx::Buffer m_attributeBuffer;
     gfx::Buffer m_colorBuffer;
     gfx::Buffer m_indexBuffer;
+    gfx::Buffer m_subMeshBuffer;
 };

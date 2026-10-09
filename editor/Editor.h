@@ -26,6 +26,7 @@ private:
     void showOpenDialog();
     void drawMenuBar();
     void drawScenePanel();
+    void frameModel();
 
     Application     *m_app  = nullptr;
     VkDescriptorPool m_pool = VK_NULL_HANDLE;

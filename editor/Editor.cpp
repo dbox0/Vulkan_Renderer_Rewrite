@@ -6,7 +6,9 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
+#include <vector>
 
 #include "Application.h"
 
@@ -250,6 +252,10 @@ void Editor::drawScenePanel()
     if (ImGui::Button("Look at origin")) {
         camera.lookAt(glm::vec3(0.0f));
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Frame model")) {
+        frameModel();
+    }
     ImGui::TextDisabled("Hold RMB: look, WASD/QE fly. MMB drag: pan");
 
     ImGui::SeparatorText("Frame");
@@ -276,4 +282,48 @@ void Editor::drawScenePanel()
     ImGui::TextDisabled("FIFO is capped at the refresh rate");
 
     ImGui::End();
+}
+
+void Editor::frameModel()
+{
+    std::vector<DrawItem> items;
+    m_app->scene().collectDrawItems(items);
+
+    glm::vec3 lo(FLT_MAX);
+    glm::vec3 hi(-FLT_MAX);
+    bool found = false;
+    for (const DrawItem &item : items) {
+        const Mesh *mesh = m_app->geometry().get(item.mesh);
+        if (!mesh) {
+            continue;
+        }
+        const float maxScale = std::max({ glm::length(glm::vec3(item.worldMatrix[0])),
+                                          glm::length(glm::vec3(item.worldMatrix[1])),
+                                          glm::length(glm::vec3(item.worldMatrix[2])) });
+        for (const SubMesh &subMesh : mesh->subMeshes) {
+            const glm::vec3 centre = glm::vec3(item.worldMatrix * glm::vec4(glm::vec3(subMesh.sphere), 1.0f));
+            const float     radius = subMesh.sphere.w * maxScale;
+            lo = glm::min(lo, centre - radius);
+            hi = glm::max(hi, centre + radius);
+            found = true;
+        }
+    }
+    if (!found) {
+        return;
+    }
+
+    Camera &camera = m_app->camera();
+    const VkExtent2D extent = m_app->swapchain().extent();
+    const float aspect = extent.height ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
+    const float halfVertical   = glm::radians(camera.fovDegrees) * 0.5f;
+    const float halfHorizontal = std::atan(std::tan(halfVertical) * aspect);
+    const float halfFov        = std::min(halfVertical, halfHorizontal);
+
+    const glm::vec3 centre   = (lo + hi) * 0.5f;
+    const float     radius   = glm::length(hi - lo) * 0.5f;
+    const float     distance = radius / std::sin(halfFov);
+    const glm::vec3 forward  = glm::vec3(camera.rotation() * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
+
+    camera.position = centre - forward * distance;
+    camera.farPlane = std::max(camera.farPlane, distance + radius);
 }

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cfloat>
 #include <cstring>
 #include <format>
 #include <iostream>
@@ -317,6 +318,8 @@ std::vector<MeshHandle> GltfLoader::loadMeshes(const tg3_model &model,
             VertexAttributes *attributes = data.attributes.data() + vertexStart;
             uint32_t         *colors     = data.colors.data() + vertexStart;
 
+            glm::vec3 aabbMin(FLT_MAX);
+            glm::vec3 aabbMax(-FLT_MAX);
             for (uint32_t v = 0; v < primitive.attributes_count; ++v) {
                 const tg3_str_int_pair &attr = primitive.attributes[v];
                 const tg3_accessor &accessor = model.accessors[attr.value];
@@ -325,6 +328,8 @@ std::vector<MeshHandle> GltfLoader::loadMeshes(const tg3_model &model,
                 if (std::strcmp(attr.key.data, "POSITION") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
                         positions[vi] = glm::vec3(readElement(model, accessor, vi));
+                        aabbMin = glm::min(aabbMin, positions[vi]);
+                        aabbMax = glm::max(aabbMax, positions[vi]);
                     }
                 } else if (std::strcmp(attr.key.data, "NORMAL") == 0) {
                     for (uint64_t vi = 0; vi < count; ++vi) {
@@ -357,6 +362,13 @@ std::vector<MeshHandle> GltfLoader::loadMeshes(const tg3_model &model,
                 std::iota(data.indices.begin() + static_cast<std::ptrdiff_t>(indexStart), data.indices.end(), 0u);
             }
 
+            const glm::vec3 centre = (aabbMin + aabbMax) * 0.5f;
+            float radiusSquared = 0.0f;
+            for (uint64_t vi = 0; vi < vertexCount; ++vi) {
+                const glm::vec3 offset = positions[vi] - centre;
+                radiusSquared = std::max(radiusSquared, glm::dot(offset, offset));
+            }
+
             const uint32_t materialId =
                 (primitive.material != -1 && static_cast<size_t>(primitive.material) < materialIds.size())
                     ? materialIds[primitive.material]
@@ -368,7 +380,10 @@ std::vector<MeshHandle> GltfLoader::loadMeshes(const tg3_model &model,
                 .vertexCount = static_cast<uint32_t>(vertexCount),
                 .indexStart  = static_cast<uint32_t>(indexStart),
                 .indexCount  = static_cast<uint32_t>(data.indices.size() - indexStart),
-                .materialIndex = m_resources.materialShaderIndex(materialId)
+                .materialIndex = m_resources.materialShaderIndex(materialId),
+                .sphere        = glm::vec4(centre, std::sqrt(radiusSquared)),
+                .aabbMin       = aabbMin,
+                .aabbMax       = aabbMax
             });
         }
 
