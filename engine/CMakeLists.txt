@@ -45,7 +45,9 @@ add_library(render STATIC
     render/Renderer.cpp
     render/PipelineRegistry.cpp
     render/GeometryStore.cpp
-    render/ResourceStore.cpp)
+    render/ResourceStore.cpp
+        render/InstanceSlots.h
+        render/InstanceSlots.cpp)
 target_link_libraries(render PUBLIC gfx scene)
 # shaders/shared/GpuTypes.h compiled by both C++ and GLSL.
 target_include_directories(render PUBLIC ${PROJECT_SOURCE_DIR}/shaders)
