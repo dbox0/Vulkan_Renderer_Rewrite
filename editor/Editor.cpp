@@ -424,7 +424,7 @@ void Editor::drawMaterialsTab()
     ImGui::Text("Slot %u: %.*s", m_selectedMaterial, static_cast<int>(name.size()), name.data());
 
     Material material = materials.read(m_selectedMaterial);
-    if (const gfx::Image *image = resources.textureImage(material.baseColorTex)) {
+    if (const gfx::Image *image = resources.textureImage(textureRefSlot(material.baseColorTex))) {
         const ImVec4 tint(material.baseColorFactor.r, material.baseColorFactor.g, material.baseColorFactor.b, material.baseColorFactor.a);
         ImGui::ImageWithBg((ImTextureID)thumbnail(image->view), ImVec2(128.0f, 128.0f), ImVec2(0.0f, 0.0f),
                            ImVec2(1.0f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), tint);

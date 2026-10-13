@@ -7,7 +7,7 @@
 
 invariant gl_Position;
 
-layout (location = 0) out vec3 outColor;
+layout (location = 0) out vec4 outColor;
 layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outUV;
 layout (location = 3) out flat uint outMaterial;
@@ -31,7 +31,7 @@ void main()
     mat3 cofactor = mat3(cross(linear[1], linear[2]), cross(linear[2], linear[0]), cross(linear[0], linear[1]));
     float mirror = sign(dot(linear[0], cross(linear[1], linear[2])));
 
-    outColor = color.rgb;
+    outColor = color;
     outNormal = mirror * (cofactor * normal);
     outUV = attributes.uv;
     outMaterial = subMesh.material;

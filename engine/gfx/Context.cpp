@@ -225,6 +225,7 @@ namespace gfx {
         vkGetPhysicalDeviceFeatures2(m_physicalDevice, &supported);
 
         if (!supported13.dynamicRendering || !supported13.synchronization2 ||
+            !supported13.shaderDemoteToHelperInvocation ||
             !supported12.timelineSemaphore || !supported12.bufferDeviceAddress ||
             !supported12.scalarBlockLayout || !supported12.drawIndirectCount ||
             !supported12.descriptorIndexing || !supported12.runtimeDescriptorArray ||
@@ -241,6 +242,7 @@ namespace gfx {
         VkPhysicalDeviceVulkan13Features features13
         {
             .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
+            .shaderDemoteToHelperInvocation = VK_TRUE,
             .synchronization2 = VK_TRUE,
             .dynamicRendering = VK_TRUE
         };

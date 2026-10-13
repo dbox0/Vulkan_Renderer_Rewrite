@@ -13,7 +13,9 @@
 #include "gfx/GpuProfiler.h"
 #include "gfx/ShaderCompiler.h"
 #include "PipelineRegistry.h"
+#include "ResourceStore.h"
 #include "SceneExtract.h"
+#include "DrawSort.h"
 #include "graph/RenderGraph.h"
 
 
@@ -25,7 +27,6 @@ namespace scene { class Scene; }
 
 class Camera;
 class GeometryStore;
-class ResourceStore;
 struct PushConstants;
 
 namespace render
@@ -82,19 +83,12 @@ private:
         uint64_t submitValue = 0;
     };
 
-    struct DrawList
-    {
-        uint32_t             count = 0;
-        uint32_t             firstMirrored = 0;
-        gfx::ArenaAllocation commands;
-    };
-
     void createFrames();
     void createPipeline(const std::filesystem::path &shaderDir);
 
-    DrawList writeDrawCommands(Frame &frame) const;
-    void declareFrame(uint32_t imageIndex, const DrawList &draws, const PushConstants &pc);
-    void recordDraws(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc, PipelineId pipeline) const;
+    void       declareFrame(uint32_t imageIndex, const PushConstants &pc);
+    PipelineId pipelineFor(DrawPass pass, Bucket bucket) const;
+    void       recordDraws(const rg::PassContext &ctx, DrawPass pass, const PushConstants &pc) const;
     void recordFrame(Frame &frame);
 
     gfx::Context   &m_ctx;
@@ -111,14 +105,17 @@ private:
     PipelineRegistry    m_pipelines;
 
     PipelineId          m_prepassPipeline;
+    PipelineId          m_prepassMaskPipeline;
     PipelineId          m_litPipeline;
+    PipelineId          m_blendPipeline;
     PipelineId          m_postPipeline;
 
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     uint32_t         m_postSamplerSlot = 0;
     PostSettings     m_post;
     gfx::GpuProfiler m_gpuProfiler;
-    SceneExtract     m_extract{ m_ctx, m_geometry };
+    SceneExtract     m_extract{ m_ctx, m_geometry, m_resources.materials() };
+    DrawSorter       m_draws;
     rg::RenderGraph  m_graph;
     GraphHook        m_graphHook;
 

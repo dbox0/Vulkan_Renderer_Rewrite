@@ -6,6 +6,7 @@
 #include <glm/mat3x4.hpp>
 
 #include "GeometryStore.h"
+#include "MaterialTable.h"
 #include "gfx/Context.h"
 #include "gfx/FrameArena.h"
 #include "scene/Scene.h"
@@ -99,8 +100,12 @@ void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
     }
     m_pending.clear();
 
+    if (m_materialFlagsVersion != m_materials.flagsVersion()) {
+        m_materialFlagsVersion = m_materials.flagsVersion();
+        m_rebuildPending = true;
+    }
     if (m_rebuildPending) {
-        rebuildCommands(scene);
+        rebuildRecords(scene);
         m_rebuildPending = false;
     }
 
@@ -109,10 +114,9 @@ void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
     m_stats.live = m_slots.liveInstances();
 }
 
-void SceneExtract::rebuildCommands(const scene::Scene &scene)
+void SceneExtract::rebuildRecords(const scene::Scene &scene)
 {
-    m_commands.clear();
-    m_mirroredCommands.clear();
+    m_records.clear();
 
     const scene::ComponentTable<scene::MeshRenderer> &renderers = scene.components<scene::MeshRenderer>();
     const std::span<const uint32_t>                   nodes     = renderers.nodes();
@@ -126,23 +130,34 @@ void SceneExtract::rebuildCommands(const scene::Scene &scene)
             continue;
         }
 
-        std::vector<VkDrawIndexedIndirectCommand> &out = m_mirrored[node] ? m_mirroredCommands : m_commands;
         const auto count = static_cast<uint32_t>(std::min<uint64_t>(range.count, mesh->subMeshes.size()));
         for (uint32_t u = 0; u < count; ++u) {
-            const SubMesh &subMesh = mesh->subMeshes[u];
-            out.push_back(VkDrawIndexedIndirectCommand
+            const SubMesh  &subMesh = mesh->subMeshes[u];
+            const uint32_t  flags   = m_materials.read(subMesh.materialIndex).flags;
+
+            uint8_t state = m_mirrored[node] ? DrawMirrored : 0;
+            if (flags & MATERIAL_DOUBLE_SIDED) {
+                state |= DrawDoubleSided;
+            }
+            const Bucket bucket = (flags & MATERIAL_ALPHA_BLEND) ? Bucket::Blend
+                                : (flags & MATERIAL_ALPHA_MASK)  ? Bucket::Mask
+                                                                 : Bucket::Opaque;
+            m_records.push_back(DrawRecord
             {
-                .indexCount = subMesh.indexCount,
-                .instanceCount = 1,
-                .firstIndex = subMesh.indexStart,
-                .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
-                .firstInstance = static_cast<uint32_t>(range.offset) + u
+                .command
+                {
+                    .indexCount = subMesh.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = subMesh.indexStart,
+                    .vertexOffset = static_cast<int32_t>(subMesh.vertexStart),
+                    .firstInstance = static_cast<uint32_t>(range.offset) + u
+                },
+                .material = subMesh.materialIndex,
+                .bucket = bucket,
+                .state = state
             });
         }
     }
-
-    m_firstMirrored = static_cast<uint32_t>(m_commands.size());
-    m_commands.insert(m_commands.end(), m_mirroredCommands.begin(), m_mirroredCommands.end());
 }
 
 }

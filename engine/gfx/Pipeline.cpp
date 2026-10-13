@@ -68,7 +68,13 @@ VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineD
         desc.colorFormats.size(),
         VkPipelineColorBlendAttachmentState
         {
-            .blendEnable = VK_FALSE,
+            .blendEnable = desc.alphaBlend ? VK_TRUE : VK_FALSE,
+            .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+            .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .colorBlendOp = VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+            .dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+            .alphaBlendOp = VK_BLEND_OP_ADD,
             .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                               VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
         });
@@ -79,11 +85,12 @@ VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineD
         .pAttachments = blendAttachments.data()
     };
 
-    const std::array dynamicStates{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_FRONT_FACE };
+    std::vector<VkDynamicState> dynamicStates{ VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    dynamicStates.insert(dynamicStates.end(), desc.dynamicStates.begin(), desc.dynamicStates.end());
     const VkPipelineDynamicStateCreateInfo dynamic
     {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .dynamicStateCount = desc.dynamicFrontFace ? 3u : 2u,
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
         .pDynamicStates = dynamicStates.data()
     };
 

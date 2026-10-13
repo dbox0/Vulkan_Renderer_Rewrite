@@ -91,25 +91,47 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     };
     VK_CHECK(vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_pipelineLayout));
 
+    constexpr std::array sceneDynamicStates{ VK_DYNAMIC_STATE_FRONT_FACE, VK_DYNAMIC_STATE_CULL_MODE };
+    const std::vector<VkDynamicState> dynamicStates(sceneDynamicStates.begin(), sceneDynamicStates.end());
+
     m_prepassPipeline = m_pipelines.addGraphics("prepass", shaderDir / "depth.vert", {}, {
         .layout = m_pipelineLayout,
         .depthFormat = DepthFormat,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
         .depthTest = true,
         .depthWrite = true,
         .depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL,
-        .dynamicFrontFace = true
+        .dynamicStates = dynamicStates
+    });
+
+    m_prepassMaskPipeline = m_pipelines.addGraphics("prepass_mask", shaderDir / "depth_mask.vert",
+                                                    shaderDir / "depth_mask.frag", {
+        .layout = m_pipelineLayout,
+        .depthFormat = DepthFormat,
+        .depthTest = true,
+        .depthWrite = true,
+        .depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .dynamicStates = dynamicStates
     });
 
     m_litPipeline = m_pipelines.addGraphics("lit", shaderDir / "lit.vert", shaderDir / "lit.frag", {
         .layout = m_pipelineLayout,
         .colorFormats = { SceneColorFormat },
         .depthFormat = DepthFormat,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
         .depthTest = true,
         .depthWrite = false,
         .depthCompare = VK_COMPARE_OP_EQUAL,
-        .dynamicFrontFace = true
+        .dynamicStates = dynamicStates
+    });
+
+    m_blendPipeline = m_pipelines.addGraphics("blend", shaderDir / "lit.vert", shaderDir / "lit.frag", {
+        .layout = m_pipelineLayout,
+        .colorFormats = { SceneColorFormat },
+        .depthFormat = DepthFormat,
+        .depthTest = true,
+        .depthWrite = false,
+        .depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .alphaBlend = true,
+        .dynamicStates = dynamicStates
     });
 
     m_postPipeline = m_pipelines.addGraphics("post", shaderDir / "post.vert", shaderDir / "post.frag", {
@@ -146,22 +168,6 @@ void Renderer::createFrames() {
         frame.arena.init(m_ctx, 16 * 1024 * 1024, "frame arena");
     }
 }
-Renderer::DrawList Renderer::writeDrawCommands(Frame &frame) const
-{
-    const std::span<const VkDrawIndexedIndirectCommand> commands = m_extract.commands();
-    DrawList draws
-    {
-        .count = static_cast<uint32_t>(commands.size()),
-        .firstMirrored = m_extract.firstMirrored()
-    };
-    if (draws.count == 0) {
-        return draws;
-    }
-    draws.commands = frame.arena.allocate(commands.size_bytes());
-    std::memcpy(draws.commands.cpu, commands.data(), commands.size_bytes());
-    return draws;
-}
-
 void Renderer::render(const scene::Scene &scene, const Camera &camera)
 {
     m_extract.collect(scene);
@@ -210,11 +216,11 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
     m_extract.write(scene, frame.arena);
     m_resources.materials().stage(frame.arena);
-    const DrawList draws = writeDrawCommands(frame);
+    m_draws.build(m_extract.records(), frame.arena);
 
     const PushConstants pc {frameAlloc.address, m_extract.instancesAddress()};
 
-    declareFrame(imageIndex, draws, pc);
+    declareFrame(imageIndex, pc);
 
     VK_CHECK(vkResetCommandPool(m_ctx.device(), frame.commandPool, 0));
     recordFrame(frame);
@@ -259,7 +265,7 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
 }
 
-void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const PushConstants &pc)
+void Renderer::declareFrame(uint32_t imageIndex, const PushConstants &pc)
 {
     const VkExtent2D extent = m_swapchain.extent();
     m_graph.beginFrame(extent);
@@ -301,17 +307,17 @@ void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const Pu
     m_graph.addPass("Prepass")
         .depth(targets.depth, rg::LoadOp::Clear, 0.0f)
         .read(instanceBuffer, rg::Usage::VertexStorageRead)
-        .execute([this, draws, pc](rg::PassContext &ctx) {
-            recordDraws(ctx, draws, pc, m_prepassPipeline);
-        });
+        .read(materialBuffer, rg::Usage::StorageReadGraphics)
+        .execute([this, pc](rg::PassContext &ctx) { recordDraws(ctx, DrawPass::Prepass, pc); });
 
     m_graph.addPass("Lit")
         .color(targets.sceneColor, rg::LoadOp::Clear, { .float32 = { 0.3f, 0.3f, 1.0f, 1.0f } })
         .depth(targets.depth, rg::LoadOp::Load, 0.0f, false)
         .read(instanceBuffer, rg::Usage::VertexStorageRead)
         .read(materialBuffer, rg::Usage::StorageReadGraphics)
-        .execute([this, draws, pc](rg::PassContext &ctx) {
-            recordDraws(ctx, draws, pc, m_litPipeline);
+        .execute([this, pc](rg::PassContext &ctx) {
+            recordDraws(ctx, DrawPass::Lit, pc);
+            recordDraws(ctx, DrawPass::Blended, pc);
         });
 
     m_graph.addPass("Post")
@@ -335,9 +341,20 @@ void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const Pu
     m_graph.compile();
 }
 
-void Renderer::recordDraws(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc, PipelineId pipeline) const
+PipelineId Renderer::pipelineFor(DrawPass pass, Bucket bucket) const
 {
-    if (draws.count == 0) {
+    switch (pass) {
+    case DrawPass::Prepass: return bucket == Bucket::Mask ? m_prepassMaskPipeline : m_prepassPipeline;
+    case DrawPass::Lit:     return m_litPipeline;
+    case DrawPass::Blended: return m_blendPipeline;
+    }
+    return m_litPipeline;
+}
+
+void Renderer::recordDraws(const rg::PassContext &ctx, DrawPass pass, const PushConstants &pc) const
+{
+    const DrawPassList &list = m_draws.list(pass);
+    if (list.count == 0) {
         return;
     }
     const VkCommandBuffer cmd = ctx.cmd();
@@ -352,20 +369,20 @@ void Renderer::recordDraws(const rg::PassContext &ctx, const DrawList &draws, co
         .maxDepth = 1.0f
     };
     vkCmdSetViewport(cmd, 0, 1, &viewport);
-
     vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(pipeline));
     vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     constexpr VkDeviceSize stride = sizeof(VkDrawIndexedIndirectCommand);
-    vkCmdSetFrontFace(cmd, VK_FRONT_FACE_COUNTER_CLOCKWISE);
-    if (draws.firstMirrored > 0) {
-        vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset, draws.firstMirrored, stride);
-    }
-    if (draws.count > draws.firstMirrored) {
-        vkCmdSetFrontFace(cmd, VK_FRONT_FACE_CLOCKWISE);
-        vkCmdDrawIndexedIndirect(cmd, draws.commands.buffer, draws.commands.offset + draws.firstMirrored * stride,
-                                 draws.count - draws.firstMirrored, stride);
+    VkPipeline bound = VK_NULL_HANDLE;
+    for (const DrawRun &run : list.runs) {
+        const VkPipeline pipeline = m_pipelines.get(pipelineFor(pass, run.bucket));
+        if (pipeline != bound) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            bound = pipeline;
+        }
+        vkCmdSetFrontFace(cmd, (run.state & DrawMirrored) ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE);
+        vkCmdSetCullMode(cmd, (run.state & DrawDoubleSided) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
+        vkCmdDrawIndexedIndirect(cmd, list.commands.buffer, list.commands.offset + run.first * stride, run.count, stride);
     }
 }
 
