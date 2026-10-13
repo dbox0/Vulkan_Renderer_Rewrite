@@ -17,6 +17,7 @@ using uint = uint32_t;
 struct VertexAttributes
 {
     uint normal;
+    uint tangent;
     vec2 uv;
 };
 
@@ -60,6 +61,15 @@ struct Instance {
     uint pad1;
 };
 
+#define DEBUG_VIEW_LIT         0u
+#define DEBUG_VIEW_BASE_COLOR  1u
+#define DEBUG_VIEW_NORMAL      2u
+#define DEBUG_VIEW_ROUGHNESS   3u
+#define DEBUG_VIEW_METALLIC    4u
+#define DEBUG_VIEW_DIRECT      5u
+#define DEBUG_VIEW_OCCLUSION   6u
+#define DEBUG_VIEW_EMISSIVE    7u
+
 struct FrameData
 {
     mat4     viewProj;
@@ -73,6 +83,12 @@ struct FrameData
     uint64_t subMeshes;
     float    time;
     uint     frameIndex;
+    vec4     sunDirection;
+    vec4     sunRadiance;
+    uint     debugView;
+    uint     pad0;
+    uint     pad1;
+    uint     pad2;
 };
 
 struct SubMeshGpu
@@ -99,9 +115,10 @@ struct PostConstants
 };
 
 #ifdef __cplusplus
-static_assert(sizeof(VertexAttributes) == 12);
+static_assert(sizeof(VertexAttributes) == 16);
 static_assert(offsetof(VertexAttributes, normal) == 0);
-static_assert(offsetof(VertexAttributes, uv) == 4);
+static_assert(offsetof(VertexAttributes, tangent) == 4);
+static_assert(offsetof(VertexAttributes, uv) == 8);
 
 static_assert(sizeof(Material) == 80);
 static_assert(offsetof(Material, baseColorFactor) == 0);
@@ -117,7 +134,10 @@ inline uint packTextureRef(uint textureSlot, uint samplerSlot)
 }
 inline uint textureRefSlot(uint ref) { return ref & TEXTURE_REF_SLOT_MASK; }
 
-static_assert(sizeof(FrameData) == 256);
+static_assert(sizeof(FrameData) == 304);
+static_assert(offsetof(FrameData, sunDirection) == 256);
+static_assert(offsetof(FrameData, sunRadiance) == 272);
+static_assert(offsetof(FrameData, debugView) == 288);
 static_assert(offsetof(FrameData, positions) == 208);
 static_assert(offsetof(FrameData, attributes) == 216);
 static_assert(offsetof(FrameData, colors) == 224);

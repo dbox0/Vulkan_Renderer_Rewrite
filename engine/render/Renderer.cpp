@@ -212,6 +212,8 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
     frameDataPtr->subMeshes      = m_geometry.subMeshesAddress();
     frameDataPtr->time           =  std::chrono::duration<float>(std::chrono::steady_clock::now() - m_startTime).count();
     frameDataPtr->frameIndex     = static_cast<uint32_t>(m_frameNumber);
+    frameDataPtr->debugView      = m_lighting.debugView;
+    writeSun(scene, *frameDataPtr);
 
 
     m_extract.write(scene, frame.arena);
@@ -270,6 +272,33 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
     m_swapchain.present(m_ctx.queue(), imageIndex);
 
+}
+
+void Renderer::writeSun(const scene::Scene &scene, FrameData &frameData)
+{
+    const scene::ComponentTable<scene::Light> &lights = scene.components<scene::Light>();
+    const std::span<const glm::mat4> worlds = scene.worlds();
+
+    m_sunFromScene = false;
+    glm::vec3 direction(0.0f, 1.0f, 0.0f);
+    glm::vec3 radiance = m_lighting.sunColor * m_lighting.sunIntensity;
+    for (uint32_t i = 0; i < lights.size(); ++i) {
+        const scene::Light &light = lights.values()[i];
+        if (light.type == scene::Light::Type::Directional) {
+            // KHR_lights_punctual: the light shines down its local -Z, so +Z points toward it.
+            direction = glm::normalize(glm::vec3(worlds[lights.nodes()[i]][2]));
+            radiance = light.color * light.intensity;
+            m_sunFromScene = true;
+            break;
+        }
+    }
+    if (!m_sunFromScene) {
+        const float cosElevation = std::cos(m_lighting.sunElevation);
+        direction = glm::vec3(cosElevation * std::sin(m_lighting.sunAzimuth), std::sin(m_lighting.sunElevation),
+                              cosElevation * std::cos(m_lighting.sunAzimuth));
+    }
+    frameData.sunDirection = glm::vec4(direction, 0.0f);
+    frameData.sunRadiance = glm::vec4(radiance, m_lighting.sunEnabled ? 1.0f : 0.0f);
 }
 
 void Renderer::declareFrame(uint32_t imageIndex, const PushConstants &pc)

@@ -51,6 +51,17 @@ public:
         float exposure = 1.0f;
     };
 
+    // sun = first directional light in the scene;
+    struct LightingSettings
+    {
+        bool      sunEnabled   = true;
+        float     sunAzimuth   = 0.6f;
+        float     sunElevation = 0.9f;
+        glm::vec3 sunColor{ 1.0f };
+        float     sunIntensity = 3.0f;
+        uint32_t  debugView    = 0;
+    };
+
     struct CpuStats
     {
         float    sortMs   = 0.0f;
@@ -77,6 +88,8 @@ public:
     const SceneExtract     &extract() const     { return m_extract; }
     PostSettings           &postSettings()      { return m_post; }
     const CpuStats         &cpuStats() const    { return m_cpuStats; }
+    LightingSettings       &lighting()          { return m_lighting; }
+    bool                    sunFromScene() const { return m_sunFromScene; }
     const rg::RenderGraph  &graph() const       { return m_graph; }
     uint64_t                frameNumber() const { return m_frameNumber; }
 
@@ -96,6 +109,7 @@ private:
     void createPipeline(const std::filesystem::path &shaderDir);
 
     void       declareFrame(uint32_t imageIndex, const PushConstants &pc);
+    void       writeSun(const scene::Scene &scene, FrameData &frameData);
     PipelineId pipelineFor(DrawPass pass, Bucket bucket) const;
     void       recordDraws(const rg::PassContext &ctx, DrawPass pass, const PushConstants &pc) const;
     void recordFrame(Frame &frame);
@@ -123,6 +137,8 @@ private:
     uint32_t         m_postSamplerSlot = 0;
     PostSettings     m_post;
     mutable CpuStats m_cpuStats;
+    LightingSettings m_lighting;
+    bool             m_sunFromScene = false;
     gfx::GpuProfiler m_gpuProfiler;
     SceneExtract     m_extract{ m_ctx, m_geometry, m_resources.materials() };
     DrawSorter       m_draws;

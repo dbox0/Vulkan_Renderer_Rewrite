@@ -325,6 +325,25 @@ void Editor::drawSceneTab()
     const render::Renderer::CpuStats &cpu = m_app->renderer().cpuStats();
     ImGui::Text("Draws: %u in %u runs; sort %.3f ms, record %.3f ms", cpu.draws, cpu.runs, cpu.sortMs, cpu.recordMs);
 
+    ImGui::SeparatorText("Lighting");
+    render::Renderer::LightingSettings &lighting = m_app->renderer().lighting();
+    static constexpr const char *DebugViews[] = { "Lit", "Base color", "Normal", "Roughness", "Metallic", "Direct only",
+                                                  "Occlusion", "Emissive" };
+    int debugView = static_cast<int>(lighting.debugView);
+    if (ImGui::Combo("Debug view", &debugView, DebugViews, IM_ARRAYSIZE(DebugViews))) {
+        lighting.debugView = static_cast<uint32_t>(debugView);
+    }
+    ImGui::Checkbox("Sun", &lighting.sunEnabled);
+    if (m_app->renderer().sunFromScene()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(from the scene's directional light)");
+    } else {
+        ImGui::SliderAngle("Sun azimuth", &lighting.sunAzimuth, -180.0f, 180.0f);
+        ImGui::SliderAngle("Sun elevation", &lighting.sunElevation, -10.0f, 90.0f);
+        ImGui::ColorEdit3("Sun color", &lighting.sunColor.x);
+        ImGui::DragFloat("Sun intensity", &lighting.sunIntensity, 0.05f, 0.0f, 100.0f, "%.2f");
+    }
+
     ImGui::SeparatorText("Post");
     ImGui::DragFloat("Exposure", &m_app->renderer().postSettings().exposure, 0.01f, 0.0f, 16.0f, "%.2f");
 

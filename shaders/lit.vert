@@ -11,6 +11,8 @@ layout (location = 0) out vec4 outColor;
 layout (location = 1) out vec3 outNormal;
 layout (location = 2) out vec2 outUV;
 layout (location = 3) out flat uint outMaterial;
+layout (location = 4) out vec3 outWorldPosition;
+layout (location = 5) out vec4 outTangent;
 
 void main()
 {
@@ -20,6 +22,7 @@ void main()
     VertexAttributes attributes = AttributePtr(frame.data.attributes).attributes[gl_VertexIndex];
     vec4 color = unpackUnorm4x8(ColorPtr(frame.data.colors).colors[gl_VertexIndex]);
     vec3 normal = octDecode(unpackSnorm2x16(attributes.normal));
+    vec4 tangent = decodeTangent(attributes.tangent);
 
     Instance instance = InstancePtr(pc.instances).instances[gl_InstanceIndex];
     SubMeshGpu subMesh = SubMeshPtr(frame.data.subMeshes).subMeshes[instance.subMesh];
@@ -35,4 +38,6 @@ void main()
     outNormal = mirror * (cofactor * normal);
     outUV = attributes.uv;
     outMaterial = subMesh.material;
+    outWorldPosition = worldPosition;
+    outTangent = vec4(linear * tangent.xyz, tangent.w * mirror);
 }

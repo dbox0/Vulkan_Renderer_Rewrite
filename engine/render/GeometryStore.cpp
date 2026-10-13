@@ -18,6 +18,7 @@ constexpr uint64_t MiB = 1024 * 1024;
 
 static_assert(sizeof(assets::PackedAttributes) == sizeof(VertexAttributes));
 static_assert(offsetof(assets::PackedAttributes, normal) == offsetof(VertexAttributes, normal));
+static_assert(offsetof(assets::PackedAttributes, tangent) == offsetof(VertexAttributes, tangent));
 static_assert(offsetof(assets::PackedAttributes, uv) == offsetof(VertexAttributes, uv));
 
 void warnFull(std::string_view meshName, std::string_view what, const core::RangeAllocator &allocator, uint64_t requested)

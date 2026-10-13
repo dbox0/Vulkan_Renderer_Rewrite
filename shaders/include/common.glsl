@@ -44,4 +44,9 @@ vec3 octDecode(vec2 e)
     return normalize(n);
 }
 
+vec4 decodeTangent(uint packed)
+{
+    return vec4(octDecode(unpackSnorm2x16(packed)), (packed & 1u) != 0u ? -1.0 : 1.0);
+}
+
 #endif

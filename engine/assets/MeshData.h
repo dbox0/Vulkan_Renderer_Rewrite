@@ -10,7 +10,8 @@
 namespace assets {
     struct PackedAttributes
     {
-        uint32_t  normal = 0;
+        uint32_t  normal  = 0;   // octahedral, snorm16 x2
+        uint32_t  tangent = 0;   // octahedral, snorm16 x2,  0 : bitangent sign
         glm::vec2 uv{ 0.0f };
     };
 

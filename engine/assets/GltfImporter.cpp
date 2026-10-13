@@ -16,6 +16,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include <mikktspace.h>
 #include <stb_image.h>
 #include <tiny_gltf_v3.h>
 
@@ -32,6 +33,7 @@ namespace
 using Clock = std::chrono::steady_clock;
 
 const glm::vec3 DefaultNormal(0.0f, 1.0f, 0.0f);
+const glm::vec4 DefaultTangent(1.0f, 0.0f, 0.0f, 1.0f);
 constexpr uint32_t White = 0xFFFFFFFFu;
 
 double millisecondsSince(Clock::time_point start)
@@ -174,6 +176,113 @@ uint32_t encodeNormal(glm::vec3 n)
     return glm::packSnorm2x16(octEncode(glm::normalize(n)));
 }
 
+uint32_t encodeTangent(glm::vec4 t)
+{
+    glm::vec3 xyz(t);
+    if (glm::dot(xyz, xyz) < 1e-12f) {
+        xyz = glm::vec3(DefaultTangent);
+    }
+    const uint32_t packed = glm::packSnorm2x16(octEncode(glm::normalize(xyz)));
+    return (packed & ~1u) | (t.w < 0.0f ? 1u : 0u);
+}
+
+struct TangentInput
+{
+    std::span<const glm::vec3>        positions;
+    std::span<const glm::vec3>        normals;
+    std::span<const PackedAttributes> attributes;
+    std::span<const uint32_t>         indices;
+    std::vector<glm::vec4>           *cornerTangents = nullptr;   // one per index
+};
+
+const TangentInput &tangentInput(const SMikkTSpaceContext *context)
+{
+    return *static_cast<const TangentInput *>(context->m_pUserData);
+}
+
+uint32_t cornerVertex(const SMikkTSpaceContext *context, int face, int corner)
+{
+    return tangentInput(context).indices[static_cast<size_t>(face) * 3 + static_cast<size_t>(corner)];
+}
+
+std::vector<glm::vec4> generateCornerTangents(const TangentInput &input)
+{
+    std::vector<glm::vec4> corners(input.indices.size(), DefaultTangent);
+    TangentInput bound = input;
+    bound.cornerTangents = &corners;
+
+    SMikkTSpaceInterface callbacks{};
+    callbacks.m_getNumFaces = [](const SMikkTSpaceContext *context) {
+        return static_cast<int>(tangentInput(context).indices.size() / 3);
+    };
+    callbacks.m_getNumVerticesOfFace = [](const SMikkTSpaceContext *, int) { return 3; };
+    callbacks.m_getPosition = [](const SMikkTSpaceContext *context, float out[], int face, int corner) {
+        const glm::vec3 &p = tangentInput(context).positions[cornerVertex(context, face, corner)];
+        out[0] = p.x; out[1] = p.y; out[2] = p.z;
+    };
+    callbacks.m_getNormal = [](const SMikkTSpaceContext *context, float out[], int face, int corner) {
+        const glm::vec3 &n = tangentInput(context).normals[cornerVertex(context, face, corner)];
+        out[0] = n.x; out[1] = n.y; out[2] = n.z;
+    };
+    callbacks.m_getTexCoord = [](const SMikkTSpaceContext *context, float out[], int face, int corner) {
+        const glm::vec2 &uv = tangentInput(context).attributes[cornerVertex(context, face, corner)].uv;
+        out[0] = uv.x; out[1] = 1.0f - uv.y;
+    };
+    callbacks.m_setTSpaceBasic = [](const SMikkTSpaceContext *context, const float t[], float sign, int face, int corner) {
+        (*tangentInput(context).cornerTangents)[static_cast<size_t>(face) * 3 + static_cast<size_t>(corner)] =
+            glm::vec4(t[0], t[1], t[2], sign);
+    };
+
+    SMikkTSpaceContext context{ .m_pInterface = &callbacks, .m_pUserData = &bound };
+    genTangSpaceDefault(&context);
+    return corners;
+}
+
+void weldTangents(MeshData &data, size_t vertexStart, size_t indexStart, std::span<const glm::vec4> cornerTangents)
+{
+    constexpr uint32_t None = UINT32_MAX;
+    const auto first = static_cast<std::ptrdiff_t>(vertexStart);
+    const std::vector<glm::vec3>        positions(data.positions.begin() + first, data.positions.end());
+    const std::vector<PackedAttributes> attributes(data.attributes.begin() + first, data.attributes.end());
+    const std::vector<uint32_t>         colors(data.colors.begin() + first, data.colors.end());
+    data.positions.resize(vertexStart);
+    data.attributes.resize(vertexStart);
+    data.colors.resize(vertexStart);
+
+    std::vector<uint32_t>  head(positions.size(), None);   // first output vertex made from each source vertex
+    std::vector<uint32_t>  next;                            // next output vertex from the same source
+    std::vector<glm::vec4> tangents;                        // tangent of each output vertex
+
+    for (size_t c = indexStart; c < data.indices.size(); ++c) {
+        const uint32_t   source  = data.indices[c];
+        const glm::vec4 &tangent = cornerTangents[c - indexStart];
+
+        uint32_t vertex = head[source];
+        while (vertex != None && tangents[vertex] != tangent) {
+            vertex = next[vertex];
+        }
+        if (vertex == None) {
+            vertex = static_cast<uint32_t>(tangents.size());
+            tangents.push_back(tangent);
+            next.push_back(head[source]);
+            head[source] = vertex;
+
+            PackedAttributes packed = attributes[source];
+            packed.tangent = encodeTangent(tangent);
+            data.positions.push_back(positions[source]);
+            data.attributes.push_back(packed);
+            data.colors.push_back(colors[source]);
+        }
+        data.indices[c] = vertex;
+    }
+}
+
+bool usesNormalTexture(const tg3_model &model, const tg3_primitive &primitive)
+{
+    return primitive.material >= 0 && static_cast<uint32_t>(primitive.material) < model.materials_count
+        && model.materials[primitive.material].normal_texture.index >= 0;
+}
+
 
 Filter toFilter(int32_t gltfFilter)
 {
@@ -293,7 +402,13 @@ core::Transform convertTransform(const tg3_node &node, std::string_view name, st
 
 MeshData convertMesh(const tg3_model &model, const tg3_mesh &gltfMesh, std::vector<std::string> &warnings)
 {
-    const PackedAttributes defaultAttributes{ .normal = encodeNormal(DefaultNormal), .uv = glm::vec2(0.0f) };
+    const PackedAttributes defaultAttributes
+    {
+        .normal = encodeNormal(DefaultNormal),
+        .tangent = encodeTangent(DefaultTangent),
+        .uv = glm::vec2(0.0f)
+    };
+    std::vector<glm::vec3> normals;   // unpacked copies MikkTSpace needs, per primitive
 
     MeshData data;
     data.name = nameOr(gltfMesh.name, "Mesh");
@@ -343,6 +458,11 @@ MeshData convertMesh(const tg3_model &model, const tg3_mesh &gltfMesh, std::vect
         PackedAttributes *attributes = data.attributes.data() + vertexStart;
         uint32_t         *colors     = data.colors.data() + vertexStart;
 
+        normals.assign(vertexCount, DefaultNormal);
+        bool hasNormals  = false;
+        bool hasUVs      = false;
+        bool hasTangents = false;
+
         glm::vec3 aabbMin(FLT_MAX);
         glm::vec3 aabbMax(-FLT_MAX);
         for (uint32_t v = 0; v < primitive.attributes_count; ++v) {
@@ -359,12 +479,20 @@ MeshData convertMesh(const tg3_model &model, const tg3_mesh &gltfMesh, std::vect
                 }
             } else if (key == "NORMAL") {
                 for (uint64_t vi = 0; vi < count; ++vi) {
-                    attributes[vi].normal = encodeNormal(glm::vec3(readElement(model, accessor, vi)));
+                    normals[vi] = glm::vec3(readElement(model, accessor, vi));
+                    attributes[vi].normal = encodeNormal(normals[vi]);
                 }
+                hasNormals = true;
+            } else if (key == "TANGENT") {
+                for (uint64_t vi = 0; vi < count; ++vi) {
+                    attributes[vi].tangent = encodeTangent(readElement(model, accessor, vi));
+                }
+                hasTangents = true;
             } else if (key == "TEXCOORD_0") {
                 for (uint64_t vi = 0; vi < count; ++vi) {
                     attributes[vi].uv = glm::vec2(readElement(model, accessor, vi));
                 }
+                hasUVs = true;
             } else if (key == "COLOR_0") {
                 for (uint64_t vi = 0; vi < count; ++vi) {
                     colors[vi] = glm::packUnorm4x8(glm::clamp(readElement(model, accessor, vi), 0.0f, 1.0f));
@@ -395,10 +523,24 @@ MeshData convertMesh(const tg3_model &model, const tg3_mesh &gltfMesh, std::vect
             radiusSquared = std::max(radiusSquared, glm::dot(offset, offset));
         }
 
+        // glTF: without TANGENT, a normal-mapped primitive gets MikkTSpace tangents.
+        const bool indicesValid = std::all_of(data.indices.begin() + static_cast<std::ptrdiff_t>(indexStart),
+                                              data.indices.end(), [&](uint32_t i) { return i < vertexCount; });
+        if (!hasTangents && hasNormals && hasUVs && indicesValid && usesNormalTexture(model, primitive)) {
+            const std::vector<glm::vec4> corners = generateCornerTangents(TangentInput
+            {
+                .positions  = { data.positions.data() + vertexStart, vertexCount },
+                .normals    = normals,
+                .attributes = { data.attributes.data() + vertexStart, vertexCount },
+                .indices    = { data.indices.data() + indexStart, data.indices.size() - indexStart }
+            });
+            weldTangents(data, vertexStart, indexStart, corners);
+        }
+
         data.subMeshes.push_back(SubMesh
         {
             .vertexStart = static_cast<uint32_t>(vertexStart),
-            .vertexCount = static_cast<uint32_t>(vertexCount),
+            .vertexCount = static_cast<uint32_t>(data.positions.size() - vertexStart),
             .indexStart  = static_cast<uint32_t>(indexStart),
             .indexCount  = static_cast<uint32_t>(data.indices.size() - indexStart),
             .material    = primitive.material,
