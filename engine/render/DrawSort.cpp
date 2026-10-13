@@ -1,6 +1,9 @@
 #include "DrawSort.h"
 #include <algorithm>
+#include <bit>
 #include <cstring>
+
+#include <glm/geometric.hpp>
 
 namespace render {
     namespace {
@@ -14,10 +17,44 @@ namespace render {
             const uint32_t mask = pass == DrawPass::Prepass && record.bucket == Bucket::Mask ? 1u : 0u;
             return (mask << 2) | record.state;
         }
+
+        uint32_t depthBits(float depth)
+        {
+            return std::bit_cast<uint32_t>(std::max(depth, 0.0f));
+        }
+
+        constexpr uint32_t MaterialBits = 12;
+
+        //  Prepass: [63..61] state | [60..32] depth, near first                  | [31..0] record
+        //  Lit:     [63..61] state | [60..49] material | [48..32] coarse depth   | [31..0] record
+        //  Blended: [63..32] depth, far first                                    | [31..0] record
+        uint64_t sortKey(DrawPass pass, const DrawRecord &record, uint32_t depth, uint32_t index)
+        {
+            const uint64_t state = stateKey(pass, record);
+            uint64_t high = 0;
+            switch (pass) {
+            case DrawPass::Prepass:
+                high = (state << 29) | (depth >> 2);
+                break;
+            case DrawPass::Lit:
+                high = (state << 29) | (uint64_t{ record.material & ((1u << MaterialBits) - 1) } << 17) | (depth >> 14);
+                break;
+            case DrawPass::Blended:
+                high = ~depth;
+                break;
+            }
+            return (high << 32) | index;
+        }
     }
 
-    void DrawSorter::build(std::span<const DrawRecord> records, gfx::FrameArena &arena)
+    void DrawSorter::build(std::span<const DrawRecord> records, std::span<const glm::vec3> centers,
+                           const SortView &view, gfx::FrameArena &arena)
     {
+        m_depthBits.resize(records.size());
+        for (size_t i = 0; i < records.size(); ++i) {
+            const glm::vec3 &center = centers[records[i].command.firstInstance];
+            m_depthBits[i] = depthBits(glm::dot(center - view.position, view.forward));
+        }
         buildPass(DrawPass::Prepass, records, arena);
         buildPass(DrawPass::Lit, records, arena);
         buildPass(DrawPass::Blended, records, arena);
@@ -32,7 +69,7 @@ namespace render {
         m_keys.clear();
         for (uint32_t i = 0; i < records.size(); ++i) {
             if (belongsTo(pass, records[i].bucket)) {
-                m_keys.push_back((uint64_t{ stateKey(pass, records[i]) } << 32) | i);
+                m_keys.push_back(sortKey(pass, records[i], m_depthBits[i], i));
             }
         }
         if (m_keys.empty()) {

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <glm/vec3.hpp>
 #include "DeviceTable.h"
 #include "DrawSort.h"
 #include "InstanceSlots.h"
@@ -43,6 +44,7 @@ namespace render
         VkBuffer        instanceBuffer() const   { return m_instances.buffer(); }
         VkDeviceAddress instancesAddress() const { return m_instances.address(); }
         std::span<const DrawRecord> records() const { return m_records; }
+        std::span<const glm::vec3>  centers() const { return m_centers; }
 
         struct Stats { uint32_t written = 0; uint32_t copyRegions = 0; uint64_t live = 0; };
         Stats stats() const { return m_stats; }
@@ -59,6 +61,7 @@ namespace render
         uint64_t      m_sceneEpoch = 0;
 
         std::vector<DrawRecord>   m_records;
+        std::vector<glm::vec3>    m_centers;   // world AABB center per instance slot
         std::vector<uint8_t>      m_mirrored;
         std::vector<uint32_t>     m_pending;
         std::vector<uint8_t>      m_isPending;

@@ -216,7 +216,14 @@ void Renderer::render(const scene::Scene &scene, const Camera &camera)
 
     m_extract.write(scene, frame.arena);
     m_resources.materials().stage(frame.arena);
-    m_draws.build(m_extract.records(), frame.arena);
+    const glm::mat4 cameraRotation = camera.rotation();
+    const SortView sortView{ .position = camera.position, .forward = -glm::vec3(cameraRotation[2]) };
+    const auto sortStart = std::chrono::steady_clock::now();
+    m_draws.build(m_extract.records(), m_extract.centers(), sortView, frame.arena);
+    m_cpuStats.sortMs = std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - sortStart).count();
+    m_cpuStats.recordMs = 0.0f;
+    m_cpuStats.draws = 0;
+    m_cpuStats.runs = 0;
 
     const PushConstants pc {frameAlloc.address, m_extract.instancesAddress()};
 
@@ -357,6 +364,7 @@ void Renderer::recordDraws(const rg::PassContext &ctx, DrawPass pass, const Push
     if (list.count == 0) {
         return;
     }
+    const auto recordStart = std::chrono::steady_clock::now();
     const VkCommandBuffer cmd = ctx.cmd();
     const VkExtent2D      extent = ctx.renderExtent();
     const VkViewport viewport
@@ -384,6 +392,10 @@ void Renderer::recordDraws(const rg::PassContext &ctx, DrawPass pass, const Push
         vkCmdSetCullMode(cmd, (run.state & DrawDoubleSided) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT);
         vkCmdDrawIndexedIndirect(cmd, list.commands.buffer, list.commands.offset + run.first * stride, run.count, stride);
     }
+
+    m_cpuStats.recordMs += std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - recordStart).count();
+    m_cpuStats.draws += list.count;
+    m_cpuStats.runs += static_cast<uint32_t>(list.runs.size());
 }
 
 void Renderer::recordFrame(Frame &frame)

@@ -50,6 +50,14 @@ public:
     {
         float exposure = 1.0f;
     };
+
+    struct CpuStats
+    {
+        float    sortMs   = 0.0f;
+        float    recordMs = 0.0f;
+        uint32_t draws    = 0;
+        uint32_t runs     = 0;
+    };
     static constexpr uint32_t MaxGpuScopes   = 16;
 
     Renderer(gfx::Context &ctx, gfx::Swapchain &swapchain,gfx::StagingUploader &uploader ,ResourceStore &resources, GeometryStore &geometry)
@@ -68,6 +76,7 @@ public:
     const gfx::GpuProfiler &gpuProfiler() const { return m_gpuProfiler; }
     const SceneExtract     &extract() const     { return m_extract; }
     PostSettings           &postSettings()      { return m_post; }
+    const CpuStats         &cpuStats() const    { return m_cpuStats; }
     const rg::RenderGraph  &graph() const       { return m_graph; }
     uint64_t                frameNumber() const { return m_frameNumber; }
 
@@ -113,6 +122,7 @@ private:
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     uint32_t         m_postSamplerSlot = 0;
     PostSettings     m_post;
+    mutable CpuStats m_cpuStats;
     gfx::GpuProfiler m_gpuProfiler;
     SceneExtract     m_extract{ m_ctx, m_geometry, m_resources.materials() };
     DrawSorter       m_draws;

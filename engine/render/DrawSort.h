@@ -4,6 +4,8 @@
 #include <span>
 #include <vector>
 
+#include <glm/vec3.hpp>
+
 #include "gfx/FrameArena.h"
 #include "gfx/Vk.h"
 
@@ -42,10 +44,17 @@ namespace render {
         uint32_t             count = 0;
     };
 
+    struct SortView
+    {
+        glm::vec3 position{ 0.0f };
+        glm::vec3 forward{ 0.0f, 0.0f, -1.0f };
+    };
+
     class DrawSorter
     {
     public:
-        void build(std::span<const DrawRecord> records, gfx::FrameArena &arena);
+       void build(std::span<const DrawRecord> records, std::span<const glm::vec3> centers, const SortView &view,
+                   gfx::FrameArena &arena);
         const DrawPassList &list(DrawPass pass) const { return m_lists[static_cast<size_t>(pass)]; }
 
     private:
@@ -53,5 +62,6 @@ namespace render {
 
         std::array<DrawPassList, DrawPassCount> m_lists;
         std::vector<uint64_t>                   m_keys;
+        std::vector<uint32_t>                   m_depthBits;   // per record, rebuilt each frame
     };
 }

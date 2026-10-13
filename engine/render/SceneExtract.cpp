@@ -28,11 +28,13 @@ const Mesh *meshOf(const scene::ComponentTable<scene::MeshRenderer> &renderers, 
 void SceneExtract::init()
 {
     m_instances.init(m_ctx, MaxInstances, "instances");
+    m_centers.assign(MaxInstances, glm::vec3(0.0f));
 }
 
 void SceneExtract::shutdown()
 {
     m_instances.destroy(m_ctx);
+    m_centers.clear();
 }
 
 void SceneExtract::collect(const scene::Scene &scene)
@@ -89,6 +91,8 @@ void SceneExtract::write(const scene::Scene &scene, gfx::FrameArena &arena)
         const auto         firstSlot       = static_cast<uint32_t>(range.offset);
         for (uint32_t u = 0; u < count; ++u) {
             m_instances.write(firstSlot + u, Instance{ .worldMatrix = packed, .subMesh = firstTableEntry + u, .node = node });
+            const SubMesh &subMesh = mesh->subMeshes[u];
+            m_centers[firstSlot + u] = glm::vec3(world * glm::vec4((subMesh.aabbMin + subMesh.aabbMax) * 0.5f, 1.0f));
         }
         m_stats.written += count;
 

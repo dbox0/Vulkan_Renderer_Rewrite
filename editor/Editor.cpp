@@ -322,6 +322,8 @@ void Editor::drawSceneTab()
     const render::SceneExtract::Stats instances = m_app->renderer().extract().stats();
     ImGui::Text("Instances: %u written, %u copies, %llu live", instances.written, instances.copyRegions,
                 static_cast<unsigned long long>(instances.live));
+    const render::Renderer::CpuStats &cpu = m_app->renderer().cpuStats();
+    ImGui::Text("Draws: %u in %u runs; sort %.3f ms, record %.3f ms", cpu.draws, cpu.runs, cpu.sortMs, cpu.recordMs);
 
     ImGui::SeparatorText("Post");
     ImGui::DragFloat("Exposure", &m_app->renderer().postSettings().exposure, 0.01f, 0.0f, 16.0f, "%.2f");
