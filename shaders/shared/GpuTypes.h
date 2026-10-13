@@ -20,11 +20,36 @@ struct VertexAttributes
     vec2 uv;
 };
 
+
+#define TEXTURE_REF_SLOT_MASK 0xFFFFu
+#define TEXTURE_REF_SAMPLER_SHIFT 16u
+
+#define MATERIAL_BASE_COLOR_TEX   0x01u
+#define MATERIAL_METAL_ROUGH_TEX  0x02u
+#define MATERIAL_NORMAL_TEX       0x04u
+#define MATERIAL_OCCLUSION_TEX    0x08u
+#define MATERIAL_EMISSIVE_TEX     0x10u
+#define MATERIAL_ALPHA_MASK       0x20u
+#define MATERIAL_ALPHA_BLEND      0x40u
+#define MATERIAL_DOUBLE_SIDED     0x80u
+
 struct Material
 {
-    vec4 baseColor;
-    uint textureIndex;
-    uint samplerIndex;
+    vec4 baseColorFactor;
+    vec3 emissiveFactor;
+    float alphaCutoff;
+    float metallicFactor;
+    float roughnessFactor;
+    float normalScale;
+    float occlusionStrength;
+    uint baseColorTex;  // packed , 16 bit descriptor slot, 16 bit sampler
+    uint metalRoughTex; // packed , 16 bit descriptor slot, 16 bit sampler
+    uint normalTex;     // packed , 16 bit descriptor slot, 16 bit sampler
+    uint occlusionTex;  // packed , 16 bit descriptor slot, 16 bit sampler
+    uint emissiveTex;
+    uint flags;
+    uint pad0;
+    uint pad1;
 };
 
 struct Instance {
@@ -78,10 +103,19 @@ static_assert(sizeof(VertexAttributes) == 12);
 static_assert(offsetof(VertexAttributes, normal) == 0);
 static_assert(offsetof(VertexAttributes, uv) == 4);
 
-static_assert(sizeof(Material) == 24);
-static_assert(offsetof(Material, baseColor) == 0);
-static_assert(offsetof(Material, textureIndex) == 16);
-static_assert(offsetof(Material, samplerIndex) == 20);
+static_assert(sizeof(Material) == 80);
+static_assert(offsetof(Material, baseColorFactor) == 0);
+static_assert(offsetof(Material, emissiveFactor) == 16);
+static_assert(offsetof(Material, metallicFactor) == 32);
+static_assert(offsetof(Material, baseColorTex) == 48);
+static_assert(offsetof(Material, emissiveTex) == 64);
+
+
+inline uint packTextureRef(uint textureSlot, uint samplerSlot)
+{
+    return (textureSlot & TEXTURE_REF_SLOT_MASK) | (samplerSlot << TEXTURE_REF_SAMPLER_SHIFT);
+}
+inline uint textureRefSlot(uint ref) { return ref & TEXTURE_REF_SLOT_MASK; }
 
 static_assert(sizeof(FrameData) == 256);
 static_assert(offsetof(FrameData, positions) == 208);

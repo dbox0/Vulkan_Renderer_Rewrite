@@ -39,6 +39,9 @@ ResourceState stateFor(Usage usage)
         return { VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT, VK_IMAGE_LAYOUT_GENERAL };
     case Usage::VertexStorageRead:
         return { VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED };
+    case Usage::StorageReadGraphics:
+        return { VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                 VK_ACCESS_2_SHADER_STORAGE_READ_BIT, VK_IMAGE_LAYOUT_UNDEFINED };
     case Usage::TransferSrc:
         return { VK_PIPELINE_STAGE_2_COPY_BIT, VK_ACCESS_2_TRANSFER_READ_BIT, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL };
     case Usage::TransferDst:
@@ -68,10 +71,12 @@ VkImageUsageFlags imageUsageFor(Usage usage)
         return VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     case Usage::TransferDst:
         return VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    case Usage::StorageReadGraphics:
     case Usage::VertexStorageRead:
     case Usage::IndirectRead:
         return 0;
     }
+
     return 0;
 }
 
@@ -101,6 +106,7 @@ bool validFor(Usage usage, Kind kind)
         return kind == Kind::Texture;
     case Usage::VertexStorageRead:
     case Usage::IndirectRead:
+    case Usage::StorageReadGraphics:
         return kind == Kind::Buffer;
     case Usage::StorageReadCompute:
     case Usage::StorageWriteCompute:
@@ -126,6 +132,7 @@ const char *usageName(Usage usage)
     case Usage::TransferSrc:         return "TransferSrc";
     case Usage::TransferDst:         return "TransferDst";
     case Usage::IndirectRead:        return "IndirectRead";
+    case Usage::StorageReadGraphics: return "StorageReadGraphics";
     }
     return "?";
 }

@@ -52,6 +52,8 @@ public:
     uint32_t textureDescriptorSlot(uint32_t textureId) const;
     uint32_t samplerDescriptorSlot(uint32_t textureId) const;
 
+    uint32_t textureRef(uint32_t textureId) const;   // packed slot + sampler
+
     const gfx::Image *textureImage(uint32_t descriptorSlot) const;
 
     uint32_t registerSampledView(VkImageView view);

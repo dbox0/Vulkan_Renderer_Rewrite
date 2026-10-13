@@ -99,7 +99,7 @@ VkPipeline tryCreateGraphicsPipeline(const Context &ctx, const GraphicsPipelineD
     {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = &rendering,
-        .stageCount = static_cast<uint32_t>(stages.size()),
+        .stageCount = desc.fragment ? 2u : 1u,
         .pStages = stages.data(),
         .pVertexInputState = &vertexInput,
         .pInputAssemblyState = &inputAssembly,

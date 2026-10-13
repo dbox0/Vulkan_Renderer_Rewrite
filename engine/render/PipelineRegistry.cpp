@@ -120,16 +120,18 @@ void PipelineRegistry::reload(Entry &entry)
 VkPipeline PipelineRegistry::build(const Entry &entry, std::vector<WatchedFile> &watched)
 {
     watched.clear();
+    const bool hasFragment = !entry.fragment.empty();
     const VkShaderModule vertex = compileModule(entry.vertex, watched);
-    const VkShaderModule fragment = vertex ? compileModule(entry.fragment, watched) : VK_NULL_HANDLE;
+    const VkShaderModule fragment = vertex && hasFragment ? compileModule(entry.fragment, watched) : VK_NULL_HANDLE;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    if (vertex && fragment) {
+    if (vertex && (fragment || !hasFragment)) {
         gfx::GraphicsPipelineDesc desc = entry.desc;
         desc.vertex = vertex;
         desc.fragment = fragment;
         pipeline = gfx::tryCreateGraphicsPipeline(*m_ctx, desc, entry.name.c_str());
     }
+
 
     // pipeline doesn't need its modules once it exists.
     vkDestroyShaderModule(m_ctx->device(), vertex, nullptr);

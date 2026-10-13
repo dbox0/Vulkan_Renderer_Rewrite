@@ -392,14 +392,14 @@ void Editor::drawMaterialsTab()
         for (size_t n = 0; n < m_materialSlots.size(); ++n) {
             const uint32_t  slot     = m_materialSlots[n];
             const Material &material = materials.read(slot);
-            const ImVec4    tint(material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a);
+            const ImVec4    tint(material.baseColorFactor.r, material.baseColorFactor.g, material.baseColorFactor.b, material.baseColorFactor.a);
 
             if (n % static_cast<size_t>(columns) != 0) {
                 ImGui::SameLine();
             }
             ImGui::PushID(static_cast<int>(slot));
             bool clicked = false;
-            if (const gfx::Image *image = resources.textureImage(material.textureIndex)) {
+            if (const gfx::Image *image = resources.textureImage(textureRefSlot(material.baseColorTex))) {
                 clicked = ImGui::ImageButton("thumbnail", (ImTextureID)thumbnail(image->view), imageSize,
                                              ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), tint);
             } else {
@@ -424,8 +424,8 @@ void Editor::drawMaterialsTab()
     ImGui::Text("Slot %u: %.*s", m_selectedMaterial, static_cast<int>(name.size()), name.data());
 
     Material material = materials.read(m_selectedMaterial);
-    if (const gfx::Image *image = resources.textureImage(material.textureIndex)) {
-        const ImVec4 tint(material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a);
+    if (const gfx::Image *image = resources.textureImage(material.baseColorTex)) {
+        const ImVec4 tint(material.baseColorFactor.r, material.baseColorFactor.g, material.baseColorFactor.b, material.baseColorFactor.a);
         ImGui::ImageWithBg((ImTextureID)thumbnail(image->view), ImVec2(128.0f, 128.0f), ImVec2(0.0f, 0.0f),
                            ImVec2(1.0f, 1.0f), ImVec4(0.05f, 0.05f, 0.05f, 1.0f), tint);
         ImGui::SameLine();
@@ -434,7 +434,7 @@ void Editor::drawMaterialsTab()
         ImGui::TextDisabled("No base color texture");
     }
 
-    if (ImGui::ColorEdit4("Base color", &material.baseColor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf)) {
+    if (ImGui::ColorEdit4("Base color", &material.baseColorFactor.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_AlphaPreviewHalf)) {
         materials.write(m_selectedMaterial, material);
     }
 }

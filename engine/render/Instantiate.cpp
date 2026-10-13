@@ -130,16 +130,37 @@ scene::NodeHandle instantiate(const assets::ImportedScene &imported, std::string
     std::vector<uint32_t> materialSlots(imported.materials.size(), 0);
     for (uint32_t i = 0; materialRange && i < materialCount; ++i) {
         const assets::ImportedMaterial &material = imported.materials[i];
-        const uint32_t textureId = inRange(material.baseColorTexture, textureIds)
-            ? textureIds[static_cast<size_t>(material.baseColorTexture)]
-            : resources.fallbackTextureId();
-        const auto slot = static_cast<uint32_t>(materialRange->offset) + i;
-        materials.write(slot, Material
+        uint32_t flags = 0;
+        const auto ref = [&](int32_t gltfTexture, uint32_t flag) {
+            if (!inRange(gltfTexture, textureIds)) {
+                return resources.textureRef(resources.fallbackTextureId());
+            }
+            flags |= flag;
+            return resources.textureRef(textureIds[static_cast<size_t>(gltfTexture)]);
+        };
+
+        Material gpu
         {
-            .baseColor = material.baseColorFactor,
-            .textureIndex = resources.textureDescriptorSlot(textureId),
-            .samplerIndex = resources.samplerDescriptorSlot(textureId)
-        });
+            .baseColorFactor = material.baseColorFactor,
+            .emissiveFactor = material.emissiveFactor,
+            .alphaCutoff = material.alphaCutoff,
+            .metallicFactor = material.metallicFactor,
+            .roughnessFactor = material.roughnessFactor,
+            .normalScale = material.normalScale,
+            .occlusionStrength = material.occlusionStrength,
+            .baseColorTex = ref(material.baseColorTexture, MATERIAL_BASE_COLOR_TEX),
+            .metalRoughTex = ref(material.metallicRoughnessTexture, MATERIAL_METAL_ROUGH_TEX),
+            .normalTex = ref(material.normalTexture, MATERIAL_NORMAL_TEX),
+            .occlusionTex = ref(material.occlusionTexture, MATERIAL_OCCLUSION_TEX),
+            .emissiveTex = ref(material.emissiveTexture, MATERIAL_EMISSIVE_TEX)
+        };
+        if (material.alphaMode == assets::AlphaMode::Mask)  flags |= MATERIAL_ALPHA_MASK;
+        if (material.alphaMode == assets::AlphaMode::Blend) flags |= MATERIAL_ALPHA_BLEND;
+        if (material.doubleSided)                           flags |= MATERIAL_DOUBLE_SIDED;
+        gpu.flags = flags;
+
+        const auto slot = static_cast<uint32_t>(materialRange->offset) + i;
+        materials.write(slot, gpu);
         materials.setName(slot, material.name);
         materialSlots[i] = slot;
     }

@@ -33,12 +33,24 @@ void ResourceStore::initialize()
     createDescriptorSets();
     createFallbackTexture();
 
+    const uint32_t fallback = textureRef(m_fallbackTextureId);
     m_materials.init(m_ctx, Material
-    {
-        .baseColor = glm::vec4(1.0f),
-        .textureIndex = textureDescriptorSlot(m_fallbackTextureId),
-        .samplerIndex = samplerDescriptorSlot(m_fallbackTextureId)
-    });
+        {
+        .baseColorFactor = glm::vec4(1.0f),
+        .emissiveFactor = glm::vec3(0.0f),
+        .alphaCutoff = 0.5f,
+        .metallicFactor = 1.0f,
+        .roughnessFactor = 1.0f,
+        .normalScale = 1.0f,
+        .occlusionStrength = 1.0f,
+        .baseColorTex = fallback,
+        .metalRoughTex = fallback,
+        .normalTex = fallback,
+        .occlusionTex = fallback,
+        .emissiveTex = fallback,
+        .flags = 0
+        }
+    );
 
 }
 
@@ -210,6 +222,10 @@ uint32_t ResourceStore::textureDescriptorSlot(uint32_t textureId) const
         return m_fallbackTextureId ? m_fallbackTextureId - 1 : 0;
     }
     return textureId - 1;
+}
+uint32_t ResourceStore::textureRef(uint32_t textureId) const
+{
+    return packTextureRef(textureDescriptorSlot(textureId), samplerDescriptorSlot(textureId));
 }
 
 uint32_t ResourceStore::samplerDescriptorSlot(uint32_t textureId) const

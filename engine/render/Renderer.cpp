@@ -91,14 +91,24 @@ void Renderer::createPipeline(const std::filesystem::path &shaderDir)
     };
     VK_CHECK(vkCreatePipelineLayout(m_ctx.device(), &layoutInfo, nullptr, &m_pipelineLayout));
 
-    m_scenePipeline = m_pipelines.addGraphics("scene", shaderDir / "shader.vert", shaderDir / "shader.frag", {
+    m_prepassPipeline = m_pipelines.addGraphics("prepass", shaderDir / "depth.vert", {}, {
+        .layout = m_pipelineLayout,
+        .depthFormat = DepthFormat,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .depthTest = true,
+        .depthWrite = true,
+        .depthCompare = VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .dynamicFrontFace = true
+    });
+
+    m_litPipeline = m_pipelines.addGraphics("lit", shaderDir / "lit.vert", shaderDir / "lit.frag", {
         .layout = m_pipelineLayout,
         .colorFormats = { SceneColorFormat },
         .depthFormat = DepthFormat,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthTest = true,
-        .depthWrite = true,
+        .depthWrite = false,
+        .depthCompare = VK_COMPARE_OP_EQUAL,
         .dynamicFrontFace = true
     });
 
@@ -270,10 +280,9 @@ void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const Pu
         .depth = m_graph.create("depth", { .format = DepthFormat })
     };
 
-    constexpr rg::ResourceState vertexRead{ VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT, VK_ACCESS_2_SHADER_STORAGE_READ_BIT };
     const MaterialTable   &materials = m_resources.materials();
-    const rg::BufferHandle instanceBuffer = m_graph.import("instances", m_extract.instanceBuffer(), vertexRead);
-    const rg::BufferHandle materialBuffer = m_graph.import("materials", materials.buffer(), vertexRead);
+    const rg::BufferHandle instanceBuffer = m_graph.import("instances", m_extract.instanceBuffer(), rg::stateFor(rg::Usage::VertexStorageRead));
+    const rg::BufferHandle materialBuffer = m_graph.import("materials", materials.buffer(),rg::stateFor(rg::Usage::StorageReadGraphics));
 
     if (m_extract.hasCopies() || materials.hasCopies()) {
         rg::PassBuilder upload = m_graph.addPass("Upload");
@@ -289,12 +298,21 @@ void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const Pu
         });
     }
 
-    m_graph.addPass("Scene")
-        .color(targets.sceneColor, rg::LoadOp::Clear, { .float32 = { 0.3f, 0.3f, 1.0f, 1.0f } })
+    m_graph.addPass("Prepass")
         .depth(targets.depth, rg::LoadOp::Clear, 0.0f)
         .read(instanceBuffer, rg::Usage::VertexStorageRead)
-        .read(materialBuffer, rg::Usage::VertexStorageRead)
-        .execute([this, draws, pc](rg::PassContext &ctx) { recordScene(ctx, draws, pc); });
+        .execute([this, draws, pc](rg::PassContext &ctx) {
+            recordDraws(ctx, draws, pc, m_prepassPipeline);
+        });
+
+    m_graph.addPass("Lit")
+        .color(targets.sceneColor, rg::LoadOp::Clear, { .float32 = { 0.3f, 0.3f, 1.0f, 1.0f } })
+        .depth(targets.depth, rg::LoadOp::Load, 0.0f, false)
+        .read(instanceBuffer, rg::Usage::VertexStorageRead)
+        .read(materialBuffer, rg::Usage::StorageReadGraphics)
+        .execute([this, draws, pc](rg::PassContext &ctx) {
+            recordDraws(ctx, draws, pc, m_litPipeline);
+        });
 
     m_graph.addPass("Post")
         .read(targets.sceneColor, rg::Usage::SampledFragment)
@@ -317,7 +335,7 @@ void Renderer::declareFrame(uint32_t imageIndex, const DrawList &draws, const Pu
     m_graph.compile();
 }
 
-void Renderer::recordScene(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc) const
+void Renderer::recordDraws(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc, PipelineId pipeline) const
 {
     if (draws.count == 0) {
         return;
@@ -336,7 +354,7 @@ void Renderer::recordScene(const rg::PassContext &ctx, const DrawList &draws, co
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_ALL, 0, sizeof(PushConstants), &pc);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(m_scenePipeline));
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelines.get(pipeline));
     vkCmdBindIndexBuffer(cmd, m_geometry.indexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     constexpr VkDeviceSize stride = sizeof(VkDrawIndexedIndirectCommand);

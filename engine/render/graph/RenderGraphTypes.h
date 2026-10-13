@@ -48,6 +48,7 @@ enum class Usage : uint8_t
     StorageReadCompute,
     StorageWriteCompute,
     VertexStorageRead,
+    StorageReadGraphics,
     TransferSrc,
     TransferDst,
     IndirectRead,

@@ -94,7 +94,7 @@ private:
 
     DrawList writeDrawCommands(Frame &frame) const;
     void declareFrame(uint32_t imageIndex, const DrawList &draws, const PushConstants &pc);
-    void recordScene(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc) const;
+    void recordDraws(const rg::PassContext &ctx, const DrawList &draws, const PushConstants &pc, PipelineId pipeline) const;
     void recordFrame(Frame &frame);
 
     gfx::Context   &m_ctx;
@@ -109,8 +109,11 @@ private:
 
     gfx::ShaderCompiler m_shaderCompiler;
     PipelineRegistry    m_pipelines;
-    PipelineId          m_scenePipeline;
+
+    PipelineId          m_prepassPipeline;
+    PipelineId          m_litPipeline;
     PipelineId          m_postPipeline;
+
     VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
     uint32_t         m_postSamplerSlot = 0;
     PostSettings     m_post;
