@@ -24,7 +24,7 @@ public:
     std::optional<core::Range> allocate(uint32_t count);
     void releaseAll();
 
-    void            write(uint32_t slot, const Material &material) { m_table.write(slot, material); }
+    void            write(uint32_t slot, const Material &material);
     const Material &read(uint32_t slot) const { return m_table.read(slot); }
     uint32_t        used() const { return 1 + static_cast<uint32_t>(m_slots.used()); }
 
@@ -35,10 +35,15 @@ public:
     void stage(gfx::FrameArena &arena) { m_table.stage(arena); }
     bool hasCopies() const { return m_table.hasCopies(); }
     void recordCopies(VkCommandBuffer cmd) const { m_table.recordCopies(cmd); }
+
+    uint64_t flagsVersion() const { return m_flagsVersion; }
+
     VkBuffer        buffer() const  { return m_table.buffer(); }
     VkDeviceAddress address() const { return m_table.address(); }
 
 private:
+    uint64_t m_flagsVersion = 0;
+
     DeviceTable<Material>    m_table;
     core::RangeAllocator     m_slots{ MaxMaterials - 1 };
     std::vector<core::Range> m_ranges;

@@ -68,7 +68,9 @@ add_library(render STATIC
         render/graph/RenderGraphDebug.cpp
         render/graph/RenderGraphDecl.h
         render/graph/RenderGraphTypes.cpp
-        render/graph/RenderGraphTypes.h)
+        render/graph/RenderGraphTypes.h
+        render/DrawSort.cpp
+        render/DrawSort.h)
 target_link_libraries(render PUBLIC gfx scene assets)
 # shaders/shared/GpuTypes.h compiled by both C++ and GLSL.
 target_include_directories(render PUBLIC ${PROJECT_SOURCE_DIR}/shaders)
